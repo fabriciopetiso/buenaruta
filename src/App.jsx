@@ -937,12 +937,21 @@ export default function App() {
   // ─── Auth effect ───────────────────────────────────────────────────────────
   useEffect(() => {
     const init = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) {
-        const profile = await fetchProfile(session.user.id);
-        setCurrentUser({ id: session.user.id, email: session.user.email, ...profile });
-        const saved = await fetchSavedRoutes(session.user.id);
-        setSavedRoutes(saved);
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          try {
+            const profile = await fetchProfile(session.user.id);
+            setCurrentUser({ id: session.user.id, email: session.user.email, ...profile });
+            const saved = await fetchSavedRoutes(session.user.id);
+            setSavedRoutes(saved);
+          } catch (profileErr) {
+            console.error("Error loading profile:", profileErr);
+            setCurrentUser({ id: session.user.id, email: session.user.email });
+          }
+        }
+      } catch (err) {
+        console.error("Auth init error:", err);
       }
       setAuthLoading(false);
     };
