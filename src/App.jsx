@@ -1793,7 +1793,6 @@ const renderMapLayers = (
 function MiniMap({ points, segmentGeometries, segmentTypes, eager = false }) {
   const wrapperRef = useRef(null);
   const lazyVisible = useOnScreen(wrapperRef);
-  // Si eager=true, visible inmediato (para el hero). Si no, lazy loading.
   const visible = eager || lazyVisible;
   const ref = useRef(null);
   const mapRef = useRef(null);
@@ -1806,7 +1805,24 @@ function MiniMap({ points, segmentGeometries, segmentTypes, eager = false }) {
 
     loadLeaflet()
       .then((L) => {
-        if (cancelled || !ref.current || mapRef.current) return;
+        if (cancelled || !ref.current) return;
+
+        // Si ya existe el mapa, solo redibujar capas
+        if (mapRef.current) {
+          renderMapLayers(
+            L,
+            mapRef.current,
+            points,
+            segmentGeometries,
+            segmentTypes,
+            layersRef,
+            true,
+            null,
+            null,
+            null
+          );
+          return;
+        }
 
         const center = points.length
           ? [points[0].lat, points[0].lng]
@@ -1828,29 +1844,26 @@ function MiniMap({ points, segmentGeometries, segmentTypes, eager = false }) {
           attribution: "",
           maxZoom: 19,
         }).addTo(map);
+
+        // Dibujar capas inmediatamente después de crear el mapa
+        renderMapLayers(
+          L,
+          map,
+          points,
+          segmentGeometries,
+          segmentTypes,
+          layersRef,
+          true,
+          null,
+          null,
+          null
+        );
       })
       .catch(console.error);
 
     return () => {
       cancelled = true;
     };
-  }, [visible, points]);
-
-  useEffect(() => {
-    if (!visible || !mapRef.current || !window.L) return;
-
-    renderMapLayers(
-      window.L,
-      mapRef.current,
-      points,
-      segmentGeometries,
-      segmentTypes,
-      layersRef,
-      true,
-      null,
-      null,
-      null
-    );
   }, [visible, points, segmentGeometries, segmentTypes]);
 
   useEffect(() => {
