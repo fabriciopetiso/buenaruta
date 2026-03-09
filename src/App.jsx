@@ -507,7 +507,35 @@ const SEED_POSTS = [
 ];
 
 const getInitialUsers = () => LS.get("br_users", SEED_USERS);
-const getInitialPosts = () => LS.get("br_posts", SEED_POSTS);
+
+// Migración: si hay posts guardados sin geometrías, usar las del SEED
+const getInitialPosts = () => {
+  const stored = LS.get("br_posts", null);
+  if (!stored) return SEED_POSTS;
+  
+  // Migrar posts del SEED que no tengan geometrías
+  const seedById = Object.fromEntries(SEED_POSTS.map(p => [p.id, p]));
+  
+  const migrated = stored.map(post => {
+    // Si es un post del SEED y no tiene geometrías, copiarlas del SEED
+    if (seedById[post.id] && (!post.segmentGeometries || post.segmentGeometries.length === 0)) {
+      return {
+        ...post,
+        segmentGeometries: seedById[post.id].segmentGeometries,
+        segmentKm: seedById[post.id].segmentKm,
+        segments: seedById[post.id].segments,
+        totalKm: seedById[post.id].totalKm,
+        provinces: seedById[post.id].provinces,
+      };
+    }
+    return post;
+  });
+  
+  // Guardar migración
+  LS.set("br_posts", migrated);
+  return migrated;
+};
+
 const getInitialSession = () => LS.get("br_session", null);
 const getInitialSavedRoutes = () => LS.get("br_saved_routes", []);
 
@@ -981,6 +1009,7 @@ function HomeHero({
           points={post.points}
           segmentGeometries={post.segmentGeometries}
           segmentTypes={post.segments?.map((s) => s.roadType)}
+          eager={true}
         />
       </div>
 
@@ -1761,9 +1790,11 @@ const renderMapLayers = (
 };
 
 // ── MiniMap ──────────────────────────────────────────────────────────────────
-function MiniMap({ points, segmentGeometries, segmentTypes }) {
+function MiniMap({ points, segmentGeometries, segmentTypes, eager = false }) {
   const wrapperRef = useRef(null);
-  const visible = useOnScreen(wrapperRef);
+  const lazyVisible = useOnScreen(wrapperRef);
+  // Si eager=true, visible inmediato (para el hero). Si no, lazy loading.
+  const visible = eager || lazyVisible;
   const ref = useRef(null);
   const mapRef = useRef(null);
   const layersRef = useRef([]);
