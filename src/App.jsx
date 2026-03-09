@@ -84,85 +84,70 @@ const TYPE_META = {
 
 const PLACE_TYPES = ["nafta", "mecánico", "mecánico de confianza", "camping", "comida", "mirador", "descanso", "otro"];
 
-const EMPTY_FILTERS = {
-  type: "all",
-  tag: "",
-  text: "",
-  province: "",
-  minLikes: "",
-  minKm: "",
-  maxKm: "",
-  sortBy: "recent",
-};
+const EMPTY_FILTERS = { type: "all", tag: "", text: "", province: "", minLikes: "", minKm: "", maxKm: "", sortBy: "likes" };
 
 const EMPTY_NP = {
-  type: "ruta",
-  title: "",
-  desc: "",
-  tags: [],
-  tagInput: "",
-  points: [],
-  segments: [],
-  segmentGeometries: [],
-  segmentKm: [],
-  totalKm: 0,
-  provinces: [],
-  placeType: "",
-  eventDate: "",
-  computing: false,
-  routeError: "",
+  type: "ruta", title: "", desc: "", tags: [], tagInput: "", points: [], segments: [],
+  segmentGeometries: [], segmentKm: [], totalKm: 0, provinces: [], placeType: "", eventDate: "",
+  computing: false, routeError: "",
 };
+
+const AUDIO_SRC = "/buena-ruta.mp3";
 
 const inp = {
-  background: "#0f172a",
-  border: "1px solid #334155",
-  borderRadius: 8,
-  color: "#f1f5f9",
-  padding: "10px 12px",
-  fontSize: 14,
-  width: "100%",
-  outline: "none",
-  boxSizing: "border-box",
+  background: "#0f172a", border: "1px solid #334155", borderRadius: 8, color: "#f1f5f9",
+  padding: "10px 12px", fontSize: 14, width: "100%", outline: "none", boxSizing: "border-box",
 };
-
-const btn = {
-  background: "#f59e0b",
-  color: "#0f172a",
-  border: "none",
-  borderRadius: 8,
-  fontWeight: 700,
-  cursor: "pointer",
-  fontSize: 14,
-};
-
+const btn = { background: "#f59e0b", color: "#0f172a", border: "none", borderRadius: 8, fontWeight: 700, cursor: "pointer", fontSize: 14 };
 const btn2 = { ...btn, background: "#1e293b", color: "#94a3b8" };
+const dangerBtn = { ...btn, background: "#ef4444", color: "#fff" };
 
-// ── Helpers ─────────────────────────────────────────────────────────────────
-const normalizePoints = (pts) =>
-  pts.map((p, i, arr) => ({
-    ...p,
-    label: i === 0 ? "Inicio" : i === arr.length - 1 && arr.length > 1 ? "Fin" : `Parada ${i}`,
-  }));
+// ── Helpers ──────────────────────────────────────────────────────────────────
+const normalizePoints = (pts) => pts.map((p, i, arr) => ({
+  ...p,
+  label: i === 0 ? "Inicio" : i === arr.length - 1 && arr.length > 1 ? "Fin" : `Parada ${i}`,
+}));
 
-const resetRouteDerived = (draft) => ({
-  ...draft,
-  segmentGeometries: [],
-  segmentKm: [],
-  totalKm: 0,
-  provinces: [],
-  computing: false,
-  routeError: "",
-});
-
+const resetRouteDerived = (draft) => ({ ...draft, segmentGeometries: [], segmentKm: [], totalKm: 0, provinces: [], computing: false, routeError: "" });
 const getRoadMeta = (value) => ROAD_TYPES.find((r) => r.value === value) || ROAD_TYPES[0];
 const isRouteType = (type) => type === "ruta" || type === "viaje";
 const isNavigableRoute = (post) => !!post && isRouteType(post.type) && Array.isArray(post.points) && post.points.length >= 2;
 
+const haversineKm = (lat1, lng1, lat2, lng2) => {
+  const toRad = (deg) => (deg * Math.PI) / 180;
+  const R = 6371;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+};
+
+const getRemainingKm = (position, path) => {
+  if (!position || !Array.isArray(path) || path.length === 0) return 0;
+  let total = haversineKm(position.lat, position.lng, path[0][0], path[0][1]);
+  for (let i = 0; i < path.length - 1; i++) {
+    total += haversineKm(path[i][0], path[i][1], path[i + 1][0], path[i + 1][1]);
+  }
+  return Math.round(total * 10) / 10;
+};
+
+const flattenRoutePath = (post) => {
+  if (post.segmentGeometries?.length) {
+    const merged = [];
+    post.segmentGeometries.forEach((seg, index) => {
+      seg.forEach((point, pointIndex) => {
+        if (index > 0 && pointIndex === 0) return;
+        merged.push(point);
+      });
+    });
+    return merged;
+  }
+  return (post.points || []).map((p) => [p.lat, p.lng]);
+};
+
 const getNavigatorLinks = (post) => {
-  const pts = post.points || [];
-  if (pts.length < 1) return {};
-  const destination = pts[pts.length - 1];
-  const waypoints = pts.slice(1, -1).map((p) => `${p.lat},${p.lng}`).join("|");
+  const destination = post.points[post.points.length - 1];
+  const waypoints = post.points.slice(1, -1).map((p) => `${p.lat},${p.lng}`).join("|");
   return {
     google: `https://www.google.com/maps/dir/?api=1&destination=${destination.lat},${destination.lng}${waypoints ? `&waypoints=${encodeURIComponent(waypoints)}` : ""}&travelmode=driving`,
     waze: `https://waze.com/ul?ll=${destination.lat},${destination.lng}&navigate=yes`,
@@ -175,41 +160,15 @@ const openExternalNavigator = (post, app) => {
   window.open(links[app] || links.google, "_blank", "noopener,noreferrer");
 };
 
-// ── Transform DB data to UI format ───────────────────────────────────────────
-const transformRoute = (dbRoute) => ({
-  id: dbRoute.id,
-  type: dbRoute.type,
-  userId: dbRoute.user_id,
-  title: dbRoute.title,
-  desc: dbRoute.description,
-  tags: dbRoute.tags || [],
-  points: dbRoute.points || [],
-  segments: dbRoute.segments || [],
-  segmentGeometries: dbRoute.segment_geometries,
-  segmentKm: dbRoute.segment_km,
-  totalKm: dbRoute.total_km || 0,
-  provinces: dbRoute.provinces || [],
-  placeType: dbRoute.place_type,
-  eventDate: dbRoute.event_date,
-  createdAt: new Date(dbRoute.created_at).getTime(),
-  likes: (dbRoute.route_likes || []).map(l => l.user_id),
-  comments: (dbRoute.route_comments || []).map(c => ({
-    id: c.id,
-    userId: c.user_id,
-    text: c.text,
-    createdAt: new Date(c.created_at).getTime(),
-    username: c.profiles?.username
-  })),
-  author: dbRoute.profiles ? {
-    id: dbRoute.profiles.id,
-    username: dbRoute.profiles.username,
-    moto: dbRoute.profiles.moto_modelo ? {
-      modelo: dbRoute.profiles.moto_modelo,
-      cilindrada: dbRoute.profiles.moto_cilindrada,
-      anio: dbRoute.profiles.moto_anio
-    } : null
-  } : null
-});
+// ── Audio helper ─────────────────────────────────────────────────────────────
+const playAudio = () => {
+  const audio = document.getElementById("br-audio");
+  if (audio) {
+    audio.currentTime = 0;
+    audio.volume = 0.85;
+    audio.play().catch(() => {});
+  }
+};
 
 // ── APIs ─────────────────────────────────────────────────────────────────────
 const fetchSegmentRoute = async (p1, p2) => {
@@ -230,10 +189,44 @@ const fetchProvince = async (point) => {
     if (!r.ok) return null;
     const data = await r.json();
     return data.address?.state || data.address?.province || data.address?.region || null;
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 };
+
+// ── Transform Supabase data to app format ────────────────────────────────────
+const transformRoute = (r) => ({
+  id: r.id,
+  type: r.type,
+  userId: r.user_id,
+  title: r.title,
+  desc: r.description,
+  tags: r.tags || [],
+  points: r.points || [],
+  segments: r.segments || [],
+  segmentGeometries: r.segment_geometries || [],
+  segmentKm: r.segment_km || [],
+  totalKm: r.total_km || 0,
+  provinces: r.provinces || [],
+  placeType: r.place_type,
+  eventDate: r.event_date,
+  likes: (r.route_likes || []).map((l) => l.user_id),
+  comments: (r.route_comments || []).map((c) => ({
+    id: c.id,
+    odId: c.user_id,
+    text: c.text,
+    createdAt: new Date(c.created_at).getTime(),
+    username: c.profiles?.username || "usuario",
+  })),
+  createdAt: new Date(r.created_at).getTime(),
+  author: r.profiles ? {
+    id: r.profiles.id,
+    username: r.profiles.username,
+    moto: r.profiles.moto_modelo ? {
+      modelo: r.profiles.moto_modelo,
+      cilindrada: r.profiles.moto_cilindrada,
+      anio: r.profiles.moto_anio,
+    } : null,
+  } : null,
+});
 
 // ── Hooks ────────────────────────────────────────────────────────────────────
 function useOnScreen(ref, rootMargin = "150px") {
@@ -259,31 +252,27 @@ function useDebouncedValue(value, delay = 250) {
 }
 
 // ── UI Components ────────────────────────────────────────────────────────────
+function LoadingSpinner() {
+  return <div style={{ color: "#f59e0b", fontSize: 18 }}>⏳ Cargando...</div>;
+}
+
 function Avatar({ username, size = 32 }) {
   const initials = username ? username.slice(0, 2).toUpperCase() : "?";
   const hue = username ? (username.charCodeAt(0) * 7) % 360 : 200;
   return (
     <div style={{
-      width: size, height: size, borderRadius: "50%",
-      background: `hsl(${hue},55%,32%)`, color: "#fff",
-      display: "flex", alignItems: "center", justifyContent: "center",
+      width: size, height: size, borderRadius: "50%", background: `hsl(${hue},55%,32%)`,
+      color: "#fff", display: "flex", alignItems: "center", justifyContent: "center",
       fontWeight: 700, fontSize: size * 0.38, flexShrink: 0,
-    }}>
-      {initials}
-    </div>
+    }}>{initials}</div>
   );
 }
 
 function Badge({ tag, onRemove }) {
   return (
-    <span style={{
-      background: "#1e293b", color: "#94a3b8", borderRadius: 99,
-      padding: "2px 10px", fontSize: 12, display: "inline-flex", alignItems: "center", gap: 4,
-    }}>
+    <span style={{ background: "#1e293b", color: "#94a3b8", borderRadius: 99, padding: "2px 10px", fontSize: 12, display: "inline-flex", alignItems: "center", gap: 4 }}>
       #{tag}
-      {onRemove && (
-        <button onClick={onRemove} style={{ background: "none", border: "none", color: "#64748b", cursor: "pointer", padding: 0, lineHeight: 1 }}>×</button>
-      )}
+      {onRemove && <button onClick={onRemove} style={{ background: "none", border: "none", color: "#64748b", cursor: "pointer", padding: 0, lineHeight: 1 }}>×</button>}
     </span>
   );
 }
@@ -296,12 +285,8 @@ function RoadTypeBadge({ value }) {
 function RouteSummary({ totalKm, provinces, segments, segmentKm }) {
   if (!totalKm && !provinces?.length) return null;
   const byType = {};
-  (segments || []).forEach((s, i) => {
-    const rt = typeof s === 'string' ? s : s.roadType;
-    const km = segmentKm?.[i] || 0;
-    byType[rt] = (byType[rt] || 0) + km;
-  });
-
+  (segments || []).forEach((s, i) => { byType[s.roadType] = (byType[s.roadType] || 0) + (segmentKm?.[i] || 0); });
+  
   return (
     <div style={{ background: "#0f172a", borderRadius: 10, padding: 12, marginTop: 10, marginBottom: 4 }}>
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", marginBottom: Object.keys(byType).length ? 8 : 0 }}>
@@ -320,18 +305,299 @@ function RouteSummary({ totalKm, provinces, segments, segmentKm }) {
   );
 }
 
-function LoadingSpinner() {
+// ── SavedRoutesPanel ─────────────────────────────────────────────────────────
+function SavedRoutesPanel({ savedRoutes, routes, currentUser, onOpenPost, onStartNavigation, onToggleSaved, onMarkCompleted }) {
+  if (!currentUser || savedRoutes.length === 0) return null;
+
   return (
-    <div style={{ display: "flex", justifyContent: "center", alignItems: "center", padding: 40 }}>
-      <div style={{
-        width: 40, height: 40, border: "3px solid #334155",
-        borderTopColor: "#f59e0b", borderRadius: "50%",
-        animation: "spin 1s linear infinite"
-      }} />
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    <div style={{ background: "#1e293b", borderRadius: 12, padding: 12, marginBottom: 14 }}>
+      <h3 style={{ margin: "0 0 10px", color: "#f1f5f9", fontSize: 16 }}>⭐ Mis rutas guardadas</h3>
+      {savedRoutes.map((saved) => {
+        const post = routes.find((p) => p.id === saved.route_id);
+        if (!post) return null;
+        return (
+          <div key={saved.id} style={{ background: "#0f172a", borderRadius: 10, padding: 10, marginBottom: 8, border: "1px solid #334155" }}>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6 }}>
+              <Avatar username={post.author?.username} size={28} />
+              <div style={{ flex: 1 }}>
+                <div onClick={() => onOpenPost(post.id)} style={{ color: "#f1f5f9", fontWeight: 700, cursor: "pointer" }}>{post.title}</div>
+                <div style={{ color: "#64748b", fontSize: 12 }}>
+                  @{post.author?.username} · {post.totalKm || 0} km · {saved.status === "completed" ? "completada" : saved.status === "active" ? "en curso" : "guardada"}
+                </div>
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button onClick={() => { playAudio(); onStartNavigation(saved, post); }} disabled={!isNavigableRoute(post)} style={{ ...btn, padding: "8px 12px", opacity: isNavigableRoute(post) ? 1 : 0.5 }}>🚀 Navegar</button>
+              <button onClick={() => onOpenPost(post.id)} style={{ ...btn2, padding: "8px 12px" }}>Ver detalle</button>
+              <button onClick={() => onToggleSaved(post.id)} style={{ ...btn2, padding: "8px 12px" }}>Quitar</button>
+              {saved.status !== "completed" && <button onClick={() => onMarkCompleted(saved)} style={{ ...btn2, padding: "8px 12px" }}>✅ Marcar hecha</button>}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
+
+// ── NavigatorChooserModal ────────────────────────────────────────────────────
+function NavigatorChooserModal({ post, onClose, onChooseApp, onStartInternal }) {
+  if (!post) return null;
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(2,6,23,0.7)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, zIndex: 2000 }} onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 420, background: "#1e293b", borderRadius: 16, padding: 16, border: "1px solid #334155" }}>
+        <h3 style={{ margin: "0 0 8px", color: "#f8fafc" }}>🚀 Hacer esta ruta</h3>
+        <p style={{ color: "#94a3b8", margin: "0 0 14px", fontSize: 14 }}>Elegí si querés abrir la ruta en otra app o usar el modo navegación simple dentro de BuenaRuta.</p>
+        <div style={{ display: "grid", gap: 8 }}>
+          <button onClick={() => onChooseApp("google")} style={{ ...btn, padding: 12 }}>Abrir en Google Maps</button>
+          <button onClick={() => onChooseApp("waze")} style={{ ...btn2, padding: 12 }}>Abrir en Waze</button>
+          <button onClick={() => onChooseApp("geo")} style={{ ...btn2, padding: 12 }}>Abrir en app del teléfono</button>
+          <button onClick={onStartInternal} style={{ ...btn2, padding: 12 }}>🧭 Navegación simple en BuenaRuta</button>
+        </div>
+        <button onClick={onClose} style={{ ...btn2, width: "100%", padding: 10, marginTop: 12 }}>Cancelar</button>
+      </div>
+    </div>
+  );
+}
+
+// ── NavigationMap ────────────────────────────────────────────────────────────
+function NavigationMap({ position, post, remainingPath, trackPoints }) {
+  const ref = useRef(null);
+  const mapRef = useRef(null);
+  const layersRef = useRef([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadLeaflet().then((L) => {
+      if (cancelled || !ref.current || mapRef.current) return;
+      const center = position ? [position.lat, position.lng] : post?.points?.length ? [post.points[0].lat, post.points[0].lng] : [-31.4, -64.18];
+      const map = L.map(ref.current, { zoomControl: true }).setView(center, 11);
+      mapRef.current = map;
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: '© OSM', maxZoom: 19 }).addTo(map);
+    }).catch(console.error);
+    return () => { cancelled = true; };
+  }, [post, position]);
+
+  useEffect(() => {
+    if (!mapRef.current || !window.L || !post) return;
+    const L = window.L;
+    layersRef.current.forEach((l) => l.remove?.());
+    layersRef.current = [];
+
+    // Full route (gray)
+    const fullPath = flattenRoutePath(post);
+    if (fullPath.length > 1) {
+      layersRef.current.push(L.polyline(fullPath, { color: "#475569", weight: 4, opacity: 0.5 }).addTo(mapRef.current));
+    }
+
+    // Remaining path (orange)
+    if (remainingPath?.length > 1) {
+      layersRef.current.push(L.polyline(remainingPath, { color: "#f59e0b", weight: 5, opacity: 0.95 }).addTo(mapRef.current));
+    }
+
+    // Track points (blue - what user actually traveled)
+    if (trackPoints?.length > 1) {
+      layersRef.current.push(L.polyline(trackPoints.map(p => [p.lat, p.lng]), { color: "#38bdf8", weight: 4, opacity: 0.8 }).addTo(mapRef.current));
+    }
+
+    // Waypoints
+    post.points.forEach((p, i) => {
+      const color = i === 0 ? "#22c55e" : i === post.points.length - 1 ? "#ef4444" : "#f59e0b";
+      const icon = L.divIcon({
+        html: `<div style="background:${color};width:14px;height:14px;border-radius:50%;border:2px solid #fff;box-shadow:0 1px 5px #0009"></div>`,
+        iconSize: [14, 14], iconAnchor: [7, 7], className: "",
+      });
+      layersRef.current.push(L.marker([p.lat, p.lng], { icon }).bindTooltip(p.label, { permanent: false }).addTo(mapRef.current));
+    });
+
+    // Current position
+    if (position) {
+      layersRef.current.push(L.circleMarker([position.lat, position.lng], { radius: 9, color: "#fff", weight: 2, fillColor: "#38bdf8", fillOpacity: 1 }).addTo(mapRef.current));
+      mapRef.current.setView([position.lat, position.lng], 13);
+    } else if (post.points?.length > 1) {
+      mapRef.current.fitBounds(L.latLngBounds(post.points.map((p) => [p.lat, p.lng])), { padding: [30, 30] });
+    }
+  }, [position, post, remainingPath, trackPoints]);
+
+  useEffect(() => {
+    return () => {
+      layersRef.current.forEach((l) => l.remove?.());
+      if (mapRef.current) { mapRef.current.remove(); mapRef.current = null; }
+    };
+  }, []);
+
+  return <div ref={ref} style={{ width: "100%", height: "100%", background: "#0f172a" }} />;
+}
+
+// ── ActiveNavigation with GPS Tracking ───────────────────────────────────────
+function ActiveNavigation({ post, onClose, onComplete }) {
+  const [position, setPosition] = useState(null);
+  const [geoErr, setGeoErr] = useState("");
+  const [checkpointIndex, setCheckpointIndex] = useState(0);
+  const [trackPoints, setTrackPoints] = useState([]);
+  const [watchSupported] = useState(() => typeof navigator !== "undefined" && !!navigator.geolocation);
+
+  const path = useMemo(() => flattenRoutePath(post), [post]);
+  const nextPoint = post.points[Math.min(checkpointIndex + 1, post.points.length - 1)];
+  const distanceToNext = position && nextPoint ? haversineKm(position.lat, position.lng, nextPoint.lat, nextPoint.lng) : null;
+  const remainingPath = useMemo(() => position ? [[position.lat, position.lng], ...path] : path, [position, path]);
+  const remainingKm = useMemo(() => getRemainingKm(position, path), [position, path]);
+
+  // Calculate tracked distance
+  const trackedKm = useMemo(() => {
+    if (trackPoints.length < 2) return 0;
+    let total = 0;
+    for (let i = 1; i < trackPoints.length; i++) {
+      total += haversineKm(trackPoints[i-1].lat, trackPoints[i-1].lng, trackPoints[i].lat, trackPoints[i].lng);
+    }
+    return Math.round(total * 10) / 10;
+  }, [trackPoints]);
+
+  useEffect(() => {
+    if (!watchSupported) {
+      setGeoErr("Geolocalización no disponible en este dispositivo.");
+      return;
+    }
+
+    let watchId = null;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const newPos = { lat: pos.coords.latitude, lng: pos.coords.longitude, speed: pos.coords.speed, timestamp: Date.now() };
+        setPosition(newPos);
+        setTrackPoints([newPos]);
+      },
+      () => setGeoErr("No pude obtener tu ubicación actual."),
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+
+    watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        setGeoErr("");
+        const newPos = { lat: pos.coords.latitude, lng: pos.coords.longitude, speed: pos.coords.speed, timestamp: Date.now() };
+        setPosition(newPos);
+        // Add to track if moved more than 20 meters
+        setTrackPoints(prev => {
+          if (prev.length === 0) return [newPos];
+          const last = prev[prev.length - 1];
+          const dist = haversineKm(last.lat, last.lng, newPos.lat, newPos.lng);
+          if (dist > 0.02) return [...prev, newPos];
+          return prev;
+        });
+      },
+      () => setGeoErr("No pude seguir tu ubicación en tiempo real."),
+      { enableHighAccuracy: true, maximumAge: 3000, timeout: 10000 }
+    );
+
+    return () => { if (watchId !== null) navigator.geolocation.clearWatch(watchId); };
+  }, [watchSupported]);
+
+  useEffect(() => {
+    if (!distanceToNext || distanceToNext > 0.2) return;
+    if (checkpointIndex < post.points.length - 1) {
+      setCheckpointIndex((prev) => Math.min(prev + 1, post.points.length - 1));
+    }
+  }, [distanceToNext, checkpointIndex, post.points.length]);
+
+  const finish = () => {
+    onComplete(trackPoints, trackedKm);
+    onClose();
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 3000, background: "#020617", display: "flex", flexDirection: "column" }}>
+      <div style={{ padding: 12, background: "#0f172a", borderBottom: "1px solid #334155" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <button onClick={onClose} style={{ ...btn2, padding: "8px 12px" }}>✕ Salir</button>
+          <div style={{ flex: 1 }}>
+            <div style={{ color: "#f8fafc", fontWeight: 700 }}>{post.title}</div>
+            <div style={{ color: "#94a3b8", fontSize: 12 }}>Próximo punto: {nextPoint?.label || "Destino"}</div>
+          </div>
+          <button onClick={finish} style={{ ...btn, padding: "8px 12px" }}>✅ Terminar</button>
+        </div>
+      </div>
+
+      <div style={{ flex: 1, position: "relative" }}>
+        <NavigationMap position={position} post={post} remainingPath={remainingPath} trackPoints={trackPoints} />
+
+        <div style={{ position: "absolute", left: 12, right: 12, bottom: 12, background: "rgba(15, 23, 42, 0.94)", border: "1px solid #334155", borderRadius: 16, padding: 16 }}>
+          <div style={{ display: "flex", gap: 16, alignItems: "center", marginBottom: 12 }}>
+            <div style={{ fontSize: 44 }}>🧭</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ color: "#f59e0b", fontWeight: 800, fontSize: 28 }}>{distanceToNext !== null ? `${distanceToNext.toFixed(1)} km` : "—"}</div>
+              <div style={{ color: "#cbd5e1", fontSize: 15 }}>hasta {nextPoint?.label || "el destino"}</div>
+            </div>
+            <div style={{ textAlign: "center" }}>
+              <div style={{ color: "#f8fafc", fontSize: 24, fontWeight: 800 }}>{position?.speed ? Math.round(position.speed * 3.6) : 0}</div>
+              <div style={{ color: "#64748b", fontSize: 12 }}>km/h</div>
+            </div>
+          </div>
+
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+            <span style={{ color: "#94a3b8", fontSize: 13 }}>🛣️ Restan {remainingKm} km</span>
+            <span style={{ color: "#38bdf8", fontSize: 13 }}>📡 Recorrido: {trackedKm} km</span>
+            <span style={{ color: "#94a3b8", fontSize: 13 }}>✅ Checkpoint {Math.min(checkpointIndex, post.points.length - 1) + 1}/{post.points.length}</span>
+          </div>
+
+          {geoErr && <p style={{ color: "#ef4444", fontSize: 13, margin: "6px 0 10px" }}>{geoErr}</p>}
+
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button onClick={() => setCheckpointIndex((prev) => Math.min(prev + 1, post.points.length - 1))} style={{ ...btn2, padding: "10px 12px" }}>✅ Llegué al punto</button>
+            <button onClick={finish} style={{ ...btn, padding: "10px 12px" }}>Marcar ruta hecha</button>
+            <button onClick={onClose} style={{ ...dangerBtn, padding: "10px 12px" }}>Abandonar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Map shared renderer ──────────────────────────────────────────────────────
+const renderMapLayers = (L, map, points, segmentGeometries, segmentTypes, layersRef, readonly, onChange, ptRef, onDeletePoint) => {
+  layersRef.current.forEach((l) => l.remove());
+  layersRef.current = [];
+
+  points.forEach((p, i) => {
+    const color = i === 0 ? "#22c55e" : i === points.length - 1 && points.length > 1 ? "#ef4444" : "#f59e0b";
+    const size = readonly ? 10 : 14;
+    const icon = L.divIcon({
+      html: `<div style="background:${color};width:${size}px;height:${size}px;border-radius:50%;border:2px solid #fff;box-shadow:0 1px 5px #0009"></div>`,
+      iconSize: [size, size], iconAnchor: [size / 2, size / 2], className: "",
+    });
+
+    const m = L.marker([p.lat, p.lng], { icon, draggable: !readonly, keyboard: true })
+      .bindTooltip(p.label, { permanent: true, direction: "top", offset: [0, -10] })
+      .addTo(map);
+
+    if (!readonly && onChange && ptRef) {
+      m.on("dragend", (e) => {
+        const { lat, lng } = e.target.getLatLng();
+        onChange(normalizePoints(ptRef.current.map((x, j) => (j === i ? { ...x, lat, lng } : x))));
+      });
+      m.on("contextmenu", () => {
+        const removed = ptRef.current[i];
+        const next = normalizePoints(ptRef.current.filter((_, j) => j !== i));
+        onChange(next);
+        onDeletePoint?.({ point: removed, index: i });
+      });
+    }
+    layersRef.current.push(m);
+  });
+
+  if (segmentGeometries?.length > 0) {
+    segmentGeometries.forEach((geo, i) => {
+      if (!geo || geo.length < 2) return;
+      const rt = getRoadMeta(segmentTypes?.[i] || "asfalto");
+      layersRef.current.push(L.polyline(geo, { color: rt.color, weight: 4, opacity: 0.9 }).addTo(map));
+    });
+  } else if (points.length > 1) {
+    layersRef.current.push(L.polyline(points.map((p) => [p.lat, p.lng]), { color: "#64748b", weight: 3, opacity: 0.5, dashArray: "8,6" }).addTo(map));
+  }
+
+  if (points.length > 1) {
+    map.fitBounds(L.latLngBounds(points.map((p) => [p.lat, p.lng])), { padding: [30, 30] });
+  } else if (points.length === 1) {
+    map.setView([points[0].lat, points[0].lng], 12);
+  }
+};
 
 // ── MiniMap ──────────────────────────────────────────────────────────────────
 function MiniMap({ points, segmentGeometries, segmentTypes }) {
@@ -346,42 +612,17 @@ function MiniMap({ points, segmentGeometries, segmentTypes }) {
     let cancelled = false;
     loadLeaflet().then((L) => {
       if (cancelled || !ref.current || mapRef.current) return;
-      const center = points?.length ? [points[0].lat, points[0].lng] : [-31.4, -64.18];
-      const map = L.map(ref.current, {
-        zoomControl: false, dragging: false, scrollWheelZoom: false,
-        doubleClickZoom: false, touchZoom: false, boxZoom: false, keyboard: false,
-      }).setView(center, 9);
+      const center = points.length ? [points[0].lat, points[0].lng] : [-31.4, -64.18];
+      const map = L.map(ref.current, { zoomControl: false, dragging: false, scrollWheelZoom: false, doubleClickZoom: false, touchZoom: false, boxZoom: false, keyboard: false }).setView(center, 9);
       mapRef.current = map;
       L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "", maxZoom: 19 }).addTo(map);
-
-      layersRef.current.forEach((l) => l.remove?.());
-      layersRef.current = [];
-
-      (points || []).forEach((p, i) => {
-        const color = i === 0 ? "#22c55e" : i === points.length - 1 ? "#ef4444" : "#f59e0b";
-        const icon = L.divIcon({
-          html: `<div style="background:${color};width:10px;height:10px;border-radius:50%;border:2px solid #fff;box-shadow:0 1px 5px #0009"></div>`,
-          iconSize: [10, 10], iconAnchor: [5, 5], className: "",
-        });
-        layersRef.current.push(L.marker([p.lat, p.lng], { icon }).addTo(map));
-      });
-
-      if (segmentGeometries?.length) {
-        segmentGeometries.forEach((geo, i) => {
-          if (!geo || geo.length < 2) return;
-          const type = segmentTypes?.[i] || "asfalto";
-          const rt = getRoadMeta(type);
-          layersRef.current.push(L.polyline(geo, { color: rt.color, weight: 4, opacity: 0.9 }).addTo(map));
-        });
-      } else if (points?.length > 1) {
-        layersRef.current.push(L.polyline(points.map((p) => [p.lat, p.lng]), { color: "#64748b", weight: 3, opacity: 0.5, dashArray: "8,6" }).addTo(map));
-      }
-
-      if (points?.length > 1) {
-        map.fitBounds(L.latLngBounds(points.map((p) => [p.lat, p.lng])), { padding: [30, 30] });
-      }
     }).catch(console.error);
     return () => { cancelled = true; };
+  }, [visible, points]);
+
+  useEffect(() => {
+    if (!visible || !mapRef.current || !window.L) return;
+    renderMapLayers(window.L, mapRef.current, points, segmentGeometries, segmentTypes, layersRef, true, null, null, null);
   }, [visible, points, segmentGeometries, segmentTypes]);
 
   useEffect(() => {
@@ -399,7 +640,7 @@ function MiniMap({ points, segmentGeometries, segmentTypes }) {
 }
 
 // ── MapPicker ────────────────────────────────────────────────────────────────
-function MapPicker({ points, onChange, readonly = false, segmentGeometries = [], segmentTypes = [] }) {
+function MapPicker({ points, onChange, readonly = false, segmentGeometries = [], segmentTypes = [], onDeletePoint }) {
   const ref = useRef(null);
   const mapRef = useRef(null);
   const layersRef = useRef([]);
@@ -410,11 +651,10 @@ function MapPicker({ points, onChange, readonly = false, segmentGeometries = [],
     let cancelled = false;
     loadLeaflet().then((L) => {
       if (cancelled || !ref.current || mapRef.current) return;
-      const center = points?.length ? [points[0].lat, points[0].lng] : [-31.4, -64.18];
+      const center = points.length ? [points[0].lat, points[0].lng] : [-31.4, -64.18];
       const map = L.map(ref.current).setView(center, 9);
       mapRef.current = map;
       L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: '© OSM', maxZoom: 19 }).addTo(map);
-
       if (!readonly) {
         map.on("click", (e) => {
           const updated = normalizePoints([...ptRef.current, { lat: e.latlng.lat, lng: e.latlng.lng }]);
@@ -423,51 +663,12 @@ function MapPicker({ points, onChange, readonly = false, segmentGeometries = [],
       }
     }).catch(console.error);
     return () => { cancelled = true; };
-  }, [readonly, onChange]);
+  }, [readonly, onChange, points]);
 
   useEffect(() => {
     if (!mapRef.current || !window.L) return;
-    const L = window.L;
-    layersRef.current.forEach((l) => l.remove?.());
-    layersRef.current = [];
-
-    (points || []).forEach((p, i) => {
-      const color = i === 0 ? "#22c55e" : i === points.length - 1 ? "#ef4444" : "#f59e0b";
-      const icon = L.divIcon({
-        html: `<div style="background:${color};width:14px;height:14px;border-radius:50%;border:2px solid #fff;box-shadow:0 1px 5px #0009"></div>`,
-        iconSize: [14, 14], iconAnchor: [7, 7], className: "",
-      });
-      const m = L.marker([p.lat, p.lng], { icon, draggable: !readonly }).bindTooltip(p.label, { permanent: true, direction: "top", offset: [0, -10] }).addTo(mapRef.current);
-      
-      if (!readonly) {
-        m.on("dragend", (e) => {
-          const { lat, lng } = e.target.getLatLng();
-          onChange(normalizePoints(ptRef.current.map((x, j) => (j === i ? { ...x, lat, lng } : x))));
-        });
-        m.on("contextmenu", () => {
-          onChange(normalizePoints(ptRef.current.filter((_, j) => j !== i)));
-        });
-      }
-      layersRef.current.push(m);
-    });
-
-    if (segmentGeometries?.length) {
-      segmentGeometries.forEach((geo, i) => {
-        if (!geo || geo.length < 2) return;
-        const type = segmentTypes?.[i] || "asfalto";
-        const rt = getRoadMeta(type);
-        layersRef.current.push(L.polyline(geo, { color: rt.color, weight: 4, opacity: 0.9 }).addTo(mapRef.current));
-      });
-    } else if (points?.length > 1) {
-      layersRef.current.push(L.polyline(points.map((p) => [p.lat, p.lng]), { color: "#64748b", weight: 3, opacity: 0.5, dashArray: "8,6" }).addTo(mapRef.current));
-    }
-
-    if (points?.length > 1) {
-      mapRef.current.fitBounds(L.latLngBounds(points.map((p) => [p.lat, p.lng])), { padding: [30, 30] });
-    } else if (points?.length === 1) {
-      mapRef.current.setView([points[0].lat, points[0].lng], 12);
-    }
-  }, [points, segmentGeometries, segmentTypes, readonly, onChange]);
+    renderMapLayers(window.L, mapRef.current, points, segmentGeometries, segmentTypes, layersRef, readonly, onChange, ptRef, onDeletePoint);
+  }, [points, segmentGeometries, segmentTypes, readonly, onChange, onDeletePoint]);
 
   useEffect(() => {
     return () => {
@@ -502,12 +703,10 @@ function LocationSearch({ onSelect }) {
         <button onClick={search} style={{ ...btn, padding: "8px 14px", flexShrink: 0 }}>{loading ? "…" : "🔍"}</button>
       </div>
       {res.length > 0 && (
-        <div style={{ background: "#1e293b", borderRadius: 8, marginTop: 4, overflow: "hidden", maxHeight: 190, overflowY: "auto" }}>
+        <div style={{ background: "#1e293b", borderRadius: 8, marginTop: 4, maxHeight: 190, overflowY: "auto" }}>
           {res.map((r, i) => (
-            <div key={i} onClick={() => { onSelect(parseFloat(r.lat), parseFloat(r.lon)); setRes([]); setQ(""); }}
-              style={{ padding: "9px 12px", cursor: "pointer", fontSize: 13, color: "#cbd5e1", borderBottom: "1px solid #0f172a" }}
-              onMouseEnter={(e) => e.currentTarget.style.background = "#0f172a"}
-              onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
+            <div key={`${r.place_id}-${i}`} onClick={() => { onSelect(parseFloat(r.lat), parseFloat(r.lon), r.display_name); setRes([]); setQ(""); }}
+              style={{ padding: "9px 12px", cursor: "pointer", fontSize: 13, color: "#cbd5e1", borderBottom: "1px solid #0f172a" }}>
               📍 {r.display_name}
             </div>
           ))}
@@ -541,27 +740,27 @@ function SegmentEditor({ points, segments, onChange }) {
 
 // ── PostCard ─────────────────────────────────────────────────────────────────
 function PostCard({ post, currentUser, onLike, onComment, goProfile, goPostId, savedRoutes, onToggleSaved, onOpenNavigatorModal }) {
-  const author = post.author;
   const meta = TYPE_META[post.type];
   const liked = !!(currentUser && post.likes?.includes(currentUser.id));
   const [showC, setShowC] = useState(false);
   const [cText, setCText] = useState("");
-  const routePost = isRouteType(post.type);
-  const hasMap = routePost && post.points?.length > 0;
-  const saved = currentUser ? savedRoutes?.find((r) => r.route_id === post.id) : null;
+  const hasMap = isRouteType(post.type) && post.points?.length > 0;
+  const saved = currentUser && savedRoutes?.some((r) => r.route_id === post.id);
 
-  const segmentTypes = post.segments?.map(s => typeof s === 'string' ? s : s.roadType) || [];
+  const submitComment = () => {
+    if (!cText.trim()) return;
+    onComment(post.id, cText.trim());
+    setCText("");
+  };
 
   return (
     <div style={{ background: "#1e293b", borderRadius: 14, marginBottom: 12, overflow: "hidden" }}>
       <div style={{ padding: 16 }}>
         <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10 }}>
-          <div onClick={() => goProfile(author?.id)} style={{ cursor: "pointer" }}>
-            <Avatar username={author?.username} />
-          </div>
+          <div onClick={() => goProfile(post.userId)} style={{ cursor: "pointer" }}><Avatar username={post.author?.username} /></div>
           <div style={{ flex: 1 }}>
-            <span style={{ color: "#f8fafc", fontWeight: 600, cursor: "pointer" }} onClick={() => goProfile(author?.id)}>@{author?.username}</span>
-            {author?.moto && <span style={{ color: "#475569", fontSize: 11, marginLeft: 8 }}>🏍️ {author.moto.modelo}</span>}
+            <span style={{ color: "#f8fafc", fontWeight: 600, cursor: "pointer" }} onClick={() => goProfile(post.userId)}>@{post.author?.username}</span>
+            {post.author?.moto && <span style={{ color: "#475569", fontSize: 11, marginLeft: 8 }}>🏍️ {post.author.moto.modelo}</span>}
             <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 2, flexWrap: "wrap" }}>
               <span style={{ background: meta.color + "22", color: meta.color, borderRadius: 99, padding: "1px 8px", fontSize: 12 }}>{meta.icon} {meta.label}</span>
               {post.totalKm > 0 && <span style={{ color: "#f59e0b", fontSize: 12, fontWeight: 700 }}>🛣️ {post.totalKm} km</span>}
@@ -573,12 +772,11 @@ function PostCard({ post, currentUser, onLike, onComment, goProfile, goPostId, s
 
         <h3 onClick={() => goPostId(post.id)} style={{ color: "#f1f5f9", margin: "0 0 4px", fontSize: 16, cursor: "pointer" }}>{post.title}</h3>
         <p style={{ color: "#94a3b8", fontSize: 14, margin: "0 0 8px", lineHeight: 1.5 }}>{post.desc}</p>
-
         {post.provinces?.length > 0 && <p style={{ color: "#64748b", fontSize: 12, margin: "0 0 8px" }}>📍 {post.provinces.join(" → ")}</p>}
 
         {post.segments?.length > 0 && (
           <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 8 }}>
-            {[...new Set(segmentTypes)].map((rt) => <RoadTypeBadge key={rt} value={rt} />)}
+            {[...new Set(post.segments.map((s) => s.roadType))].map((rt) => <RoadTypeBadge key={rt} value={rt} />)}
           </div>
         )}
 
@@ -594,7 +792,7 @@ function PostCard({ post, currentUser, onLike, onComment, goProfile, goPostId, s
             💬 {post.comments?.length || 0}
           </button>
           {currentUser && isNavigableRoute(post) && (
-            <button onClick={() => onToggleSaved(post.id)} style={{ background: "none", border: "none", color: saved ? "#f59e0b" : "#64748b", cursor: "pointer", fontSize: 15, padding: 0 }}>
+            <button onClick={() => { playAudio(); onToggleSaved(post.id); }} style={{ background: "none", border: "none", color: saved ? "#f59e0b" : "#64748b", cursor: "pointer", fontSize: 15, padding: 0 }}>
               {saved ? "⭐ Guardada" : "⭐ Guardar"}
             </button>
           )}
@@ -605,7 +803,7 @@ function PostCard({ post, currentUser, onLike, onComment, goProfile, goPostId, s
 
         {currentUser && isNavigableRoute(post) && (
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
-            <button onClick={() => onOpenNavigatorModal(post.id)} style={{ ...btn, padding: "8px 12px" }}>🚀 Hacer esta ruta</button>
+            <button onClick={() => { playAudio(); onOpenNavigatorModal(post.id); }} style={{ ...btn, padding: "8px 12px" }}>🚀 Hacer esta ruta</button>
           </div>
         )}
 
@@ -622,293 +820,230 @@ function PostCard({ post, currentUser, onLike, onComment, goProfile, goPostId, s
             ))}
             {currentUser && (
               <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
-                <input value={cText} onChange={(e) => setCText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && cText.trim() && (onComment(post.id, cText.trim()), setCText(""))}
-                  placeholder="Comentar…" style={{ ...inp, flex: 1, padding: "6px 10px" }} />
-                <button onClick={() => { if (cText.trim()) { onComment(post.id, cText.trim()); setCText(""); } }} style={{ ...btn, padding: "6px 12px" }}>↑</button>
+                <input value={cText} onChange={(e) => setCText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submitComment()} placeholder="Comentar…" style={{ ...inp, flex: 1, padding: "6px 10px" }} />
+                <button onClick={submitComment} style={{ ...btn, padding: "6px 12px" }}>↑</button>
               </div>
             )}
           </div>
         )}
       </div>
-
-      {hasMap && <MiniMap points={post.points} segmentGeometries={post.segmentGeometries} segmentTypes={segmentTypes} />}
+      {hasMap && <MiniMap points={post.points} segmentGeometries={post.segmentGeometries} segmentTypes={post.segments?.map((s) => s.roadType)} />}
     </div>
   );
 }
 
-// ── NavigatorChooserModal ────────────────────────────────────────────────────
-function NavigatorChooserModal({ post, onClose, onChooseApp }) {
-  if (!post) return null;
-  return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(2,6,23,0.7)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, zIndex: 2000 }} onClick={onClose}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 420, background: "#1e293b", borderRadius: 16, padding: 16, border: "1px solid #334155" }}>
-        <h3 style={{ margin: "0 0 8px", color: "#f8fafc" }}>🚀 Hacer esta ruta</h3>
-        <p style={{ color: "#94a3b8", margin: "0 0 14px", fontSize: 14 }}>Elegí dónde abrir la navegación.</p>
-        <div style={{ display: "grid", gap: 8 }}>
-          <button onClick={() => onChooseApp("google")} style={{ ...btn, padding: 12 }}>Abrir en Google Maps</button>
-          <button onClick={() => onChooseApp("waze")} style={{ ...btn2, padding: 12 }}>Abrir en Waze</button>
-          <button onClick={() => onChooseApp("geo")} style={{ ...btn2, padding: 12 }}>Abrir en app del teléfono</button>
-        </div>
-        <button onClick={onClose} style={{ ...btn2, width: "100%", padding: 10, marginTop: 12 }}>Cancelar</button>
-      </div>
-    </div>
-  );
-}
-
-// ── ProfileView Component ────────────────────────────────────────────────────
+// ── ProfileView ──────────────────────────────────────────────────────────────
 function ProfileView({ profileId, currentUser, routes, goBack, goPostId, handleLike, handleComment, savedRoutes, handleToggleSaved, setNavigatorPostId, handleLogout }) {
   const [profile, setProfile] = useState(null);
   const [userRoutes, setUserRoutes] = useState([]);
   const [followCounts, setFollowCounts] = useState({ followers: 0, following: 0 });
-  const [isFollowingUser, setIsFollowingUser] = useState(false);
-  const [profileLoading, setProfileLoading] = useState(true);
+  const [isFollowing, setIsFollowing] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const loadProfile = async () => {
+    const load = async () => {
+      setLoading(true);
       try {
-        const p = await fetchProfile(profileId);
+        const [p, r, counts] = await Promise.all([
+          fetchProfile(profileId),
+          fetchUserRoutes(profileId),
+          fetchFollowCounts(profileId),
+        ]);
         setProfile(p);
-        const routes = await fetchUserRoutes(profileId);
-        setUserRoutes(routes.map(transformRoute));
-        const counts = await fetchFollowCounts(profileId);
+        setUserRoutes(r.map(transformRoute));
         setFollowCounts(counts);
         if (currentUser && currentUser.id !== profileId) {
           const following = await checkIsFollowing(currentUser.id, profileId);
-          setIsFollowingUser(following);
+          setIsFollowing(following);
         }
-      } catch (err) {
-        console.error(err);
-      }
-      setProfileLoading(false);
+      } catch (err) { console.error(err); }
+      setLoading(false);
     };
-    loadProfile();
+    load();
   }, [profileId, currentUser]);
 
-  if (profileLoading) return <LoadingSpinner />;
-  if (!profile) return <p style={{ color: "#64748b" }}>Usuario no encontrado</p>;
+  const handleFollow = async () => {
+    if (!currentUser) return;
+    try {
+      const nowFollowing = await toggleFollow(currentUser.id, profileId);
+      setIsFollowing(nowFollowing);
+      setFollowCounts(prev => ({
+        ...prev,
+        followers: nowFollowing ? prev.followers + 1 : prev.followers - 1
+      }));
+    } catch (err) { console.error(err); }
+  };
+
+  if (loading) return <LoadingSpinner />;
+  if (!profile) return <p style={{ color: "#64748b" }}>Usuario no encontrado.</p>;
 
   const isOwn = currentUser?.id === profile.id;
 
-  const handleFollowToggle = async () => {
-    if (!currentUser) return;
-    await toggleFollow(currentUser.id, profileId);
-    setIsFollowingUser(!isFollowingUser);
-    const counts = await fetchFollowCounts(profileId);
-    setFollowCounts(counts);
-  };
-
   return (
-    <>
+    <div>
       <button onClick={goBack} style={{ ...btn2, padding: "6px 12px", marginBottom: 14 }}>← Volver</button>
-
       <div style={{ textAlign: "center", marginBottom: 20 }}>
         <div style={{ display: "flex", justifyContent: "center" }}><Avatar username={profile.username} size={68} /></div>
         <h2 style={{ color: "#f1f5f9", margin: "10px 0 2px" }}>@{profile.username}</h2>
         {profile.moto_modelo && (
           <p style={{ color: "#f59e0b", fontSize: 14, margin: "0 0 10px" }}>🏍️ {profile.moto_modelo} · {profile.moto_cilindrada}cc · {profile.moto_anio}</p>
         )}
-
         <div style={{ display: "flex", justifyContent: "center", gap: 24, color: "#64748b", fontSize: 14, marginBottom: 14 }}>
-          <span><strong style={{ color: "#f1f5f9" }}>{userRoutes.length}</strong> rutas</span>
+          <span><strong style={{ color: "#f1f5f9" }}>{userRoutes.length}</strong> publicaciones</span>
           <span><strong style={{ color: "#f1f5f9" }}>{followCounts.followers}</strong> seguidores</span>
           <span><strong style={{ color: "#f1f5f9" }}>{followCounts.following}</strong> siguiendo</span>
         </div>
-
         {!isOwn && currentUser && (
-          <button onClick={handleFollowToggle} style={{ ...(isFollowingUser ? btn2 : btn), padding: "8px 28px" }}>
-            {isFollowingUser ? "Dejar de seguir" : "Seguir"}
-          </button>
+          <button onClick={handleFollow} style={{ ...(isFollowing ? btn2 : btn), padding: "8px 28px" }}>{isFollowing ? "Dejar de seguir" : "Seguir"}</button>
         )}
-
         {isOwn && <button onClick={handleLogout} style={{ ...btn2, padding: "8px 20px" }}>Cerrar sesión</button>}
       </div>
 
       <h3 style={{ color: "#94a3b8", fontSize: 14, marginBottom: 12 }}>Publicaciones de @{profile.username}</h3>
-
-      {userRoutes.length === 0 ? (
-        <p style={{ color: "#64748b" }}>Sin publicaciones aún.</p>
-      ) : (
-        userRoutes.map((p) => (
-          <PostCard key={p.id} post={p} currentUser={currentUser} onLike={handleLike} onComment={handleComment}
-            goProfile={() => {}} goPostId={goPostId} savedRoutes={savedRoutes} onToggleSaved={handleToggleSaved}
-            onOpenNavigatorModal={(id) => setNavigatorPostId(id)} />
-        ))
-      )}
-    </>
+      {userRoutes.length === 0 && <p style={{ color: "#64748b" }}>Sin publicaciones aún.</p>}
+      {userRoutes.map((p) => (
+        <PostCard key={p.id} post={p} currentUser={currentUser} onLike={handleLike} onComment={handleComment}
+          goProfile={() => {}} goPostId={goPostId} savedRoutes={savedRoutes} onToggleSaved={handleToggleSaved} onOpenNavigatorModal={setNavigatorPostId} />
+      ))}
+    </div>
   );
 }
 
-// ── App ──────────────────────────────────────────────────────────────────────
+// ── Main App ─────────────────────────────────────────────────────────────────
 export default function App() {
-  const [session, setSession] = useState(null);
   const [currentUser, setCurrentUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
-
   const [routes, setRoutes] = useState([]);
   const [savedRoutes, setSavedRoutes] = useState([]);
-  const [loading, setLoading] = useState(true);
 
   const [view, setView] = useState("feed");
   const [navStack, setNavStack] = useState([]);
   const [authMode, setAuthMode] = useState("login");
   const [authF, setAuthF] = useState({ email: "", username: "", pass: "", modelo: "", cilindrada: "", anio: "" });
   const [authErr, setAuthErr] = useState("");
+
   const [filters, setFilters] = useState(EMPTY_FILTERS);
+  const debouncedText = useDebouncedValue(filters.text, 250);
+
   const [np, setNp] = useState(EMPTY_NP);
   const [npStep, setNpStep] = useState(1);
+  const routeReqIdRef = useRef(0);
+
   const [activePostId, setActivePostId] = useState(null);
   const [activeProfileId, setActiveProfileId] = useState(null);
   const [navigatorPostId, setNavigatorPostId] = useState(null);
+  const [activeNavigation, setActiveNavigation] = useState(null);
 
-  const debouncedText = useDebouncedValue(filters.text, 250);
-  const routeReqIdRef = useRef(0);
-
-  // ─── Auth setup ────────────────────────────────────────────────────────────
+  // ─── Auth effect ───────────────────────────────────────────────────────────
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
+    const init = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
-        fetchProfile(session.user.id).then(setCurrentUser).catch(console.error);
+        const profile = await fetchProfile(session.user.id);
+        setCurrentUser({ id: session.user.id, email: session.user.email, ...profile });
+        const saved = await fetchSavedRoutes(session.user.id);
+        setSavedRoutes(saved);
       }
       setAuthLoading(false);
-    });
+    };
+    init();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (session?.user) {
-        fetchProfile(session.user.id).then(setCurrentUser).catch(console.error);
+        const profile = await fetchProfile(session.user.id);
+        setCurrentUser({ id: session.user.id, email: session.user.email, ...profile });
+        const saved = await fetchSavedRoutes(session.user.id);
+        setSavedRoutes(saved);
       } else {
         setCurrentUser(null);
+        setSavedRoutes([]);
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => subscription?.unsubscribe();
   }, []);
 
   // ─── Load routes ───────────────────────────────────────────────────────────
   useEffect(() => {
-    const loadData = async () => {
+    const load = async () => {
       try {
         const data = await fetchRoutes();
         setRoutes(data.map(transformRoute));
-      } catch (err) {
-        console.error("Error loading routes:", err);
-      }
-      setLoading(false);
+      } catch (err) { console.error(err); }
     };
-    loadData();
-
-    const routesSub = subscribeToRoutes((payload) => {
-      if (payload.eventType === 'INSERT') {
-        fetchRouteById(payload.new.id).then(r => {
-          setRoutes(prev => [transformRoute(r), ...prev]);
-        });
-      } else if (payload.eventType === 'DELETE') {
-        setRoutes(prev => prev.filter(r => r.id !== payload.old.id));
-      }
-    });
-
-    const likesSub = subscribeToLikes(() => {
-      fetchRoutes().then(data => setRoutes(data.map(transformRoute)));
-    });
-
-    const commentsSub = subscribeToComments(() => {
-      fetchRoutes().then(data => setRoutes(data.map(transformRoute)));
-    });
-
-    return () => {
-      routesSub.unsubscribe();
-      likesSub.unsubscribe();
-      commentsSub.unsubscribe();
-    };
+    load();
   }, []);
 
-  // ─── Load saved routes ─────────────────────────────────────────────────────
+  // ─── Audio intro effect ────────────────────────────────────────────────────
   useEffect(() => {
-    if (currentUser) {
-      fetchSavedRoutes(currentUser.id).then(setSavedRoutes).catch(console.error);
-    } else {
-      setSavedRoutes([]);
-    }
-  }, [currentUser]);
+    if (view !== "feed") return;
+    if (sessionStorage.getItem("br_intro_played")) return;
+    
+    const tryPlay = () => {
+      const audio = document.getElementById("br-audio");
+      if (audio) {
+        audio.volume = 0.85;
+        audio.play().then(() => sessionStorage.setItem("br_intro_played", "1")).catch(() => {});
+      }
+    };
+    
+    tryPlay();
+    const handler = () => { tryPlay(); window.removeEventListener("click", handler); };
+    window.addEventListener("click", handler, { once: true });
+    return () => window.removeEventListener("click", handler);
+  }, [view]);
 
-  // ─── Navigation ────────────────────────────────────────────────────────────
-  const openView = (nextView, payloadFn) => {
-    setNavStack((prev) => [...prev, view]);
-    payloadFn?.();
-    setView(nextView);
-  };
-
-  const goBack = () => {
-    setNavStack((prev) => {
-      const next = [...prev];
-      const last = next.pop();
-      setView(last || "feed");
-      return next;
-    });
-  };
-
-  const goProfile = (id) => openView("profile", () => setActiveProfileId(id));
-  const goPostId = (id) => openView("post", () => setActivePostId(id));
+  // ─── Navigation helpers ────────────────────────────────────────────────────
+  const openView = (nextView, payloadFn) => { setNavStack((prev) => [...prev, view]); payloadFn?.(); setView(nextView); };
+  const goBack = () => { setNavStack((prev) => { const next = [...prev]; const last = next.pop(); setView(last || "feed"); return next; }); };
+  const goProfile = (id) => { openView("profile", () => setActiveProfileId(id)); };
+  const goPostId = (id) => { openView("post", () => setActivePostId(id)); };
 
   // ─── Auth handlers ─────────────────────────────────────────────────────────
   const handleAuth = async () => {
     setAuthErr("");
-    try {
-      if (authMode === "login") {
+    if (authMode === "login") {
+      try {
         await signIn(authF.email, authF.pass);
-      } else {
-        if (!authF.email || !authF.username || !authF.pass) {
-          setAuthErr("Completá todos los campos");
-          return;
-        }
-        if (!authF.modelo || !authF.cilindrada || !authF.anio) {
-          setAuthErr("Completá los datos de tu moto");
-          return;
-        }
-        await signUp(authF.email, authF.pass, authF.username, {
-          modelo: authF.modelo,
-          cilindrada: authF.cilindrada,
-          anio: authF.anio
-        });
-        setAuthErr("¡Revisá tu email para confirmar la cuenta!");
-        return;
+        setAuthF({ email: "", username: "", pass: "", modelo: "", cilindrada: "", anio: "" });
+        setView("feed"); setNavStack([]);
+      } catch (err) { setAuthErr(err.message || "Error al iniciar sesión"); }
+    } else {
+      if (!authF.email || !authF.username || !authF.pass || !authF.modelo || !authF.cilindrada || !authF.anio) {
+        return setAuthErr("Completá todos los campos");
       }
-      setAuthF({ email: "", username: "", pass: "", modelo: "", cilindrada: "", anio: "" });
-      setView("feed");
-      setNavStack([]);
-    } catch (err) {
-      setAuthErr(err.message || "Error de autenticación");
+      try {
+        await signUp(authF.email, authF.pass, authF.username, { modelo: authF.modelo, cilindrada: authF.cilindrada, anio: authF.anio });
+        setAuthErr("✅ Revisá tu email para confirmar la cuenta");
+      } catch (err) { setAuthErr(err.message || "Error al registrar"); }
     }
   };
 
   const handleLogout = async () => {
     await signOut();
-    setView("feed");
-    setNavStack([]);
+    setCurrentUser(null);
+    setSavedRoutes([]);
+    setView("feed"); setNavStack([]);
   };
 
-  // ─── Route actions ─────────────────────────────────────────────────────────
+  // ─── Route handlers ────────────────────────────────────────────────────────
   const handleLike = async (routeId) => {
     if (!currentUser) return;
     try {
-      await toggleLike(routeId, currentUser.id);
-      const data = await fetchRoutes();
-      setRoutes(data.map(transformRoute));
-    } catch (err) {
-      console.error("Error toggling like:", err);
-    }
+      const liked = await toggleLike(routeId, currentUser.id);
+      setRoutes(prev => prev.map(r => r.id === routeId ? { ...r, likes: liked ? [...r.likes, currentUser.id] : r.likes.filter(id => id !== currentUser.id) } : r));
+    } catch (err) { console.error(err); }
   };
 
   const handleComment = async (routeId, text) => {
     if (!currentUser) return;
     try {
-      await addComment(routeId, currentUser.id, text);
-      const data = await fetchRoutes();
-      setRoutes(data.map(transformRoute));
-    } catch (err) {
-      console.error("Error adding comment:", err);
-    }
+      const comment = await addComment(routeId, currentUser.id, text);
+      setRoutes(prev => prev.map(r => r.id === routeId ? {
+        ...r,
+        comments: [...r.comments, { id: comment.id, odId: currentUser.id, text, createdAt: Date.now(), username: currentUser.username }]
+      } : r));
+    } catch (err) { console.error(err); }
   };
 
   const handleToggleSaved = async (routeId) => {
@@ -917,12 +1052,48 @@ export default function App() {
       await toggleSaveRoute(currentUser.id, routeId);
       const saved = await fetchSavedRoutes(currentUser.id);
       setSavedRoutes(saved);
-    } catch (err) {
-      console.error("Error toggling saved:", err);
-    }
+    } catch (err) { console.error(err); }
   };
 
-  // ─── Create route ──────────────────────────────────────────────────────────
+  const handleMarkCompleted = async (saved) => {
+    if (!currentUser) return;
+    try {
+      await updateSavedRouteStatus(currentUser.id, saved.route_id, "completed");
+      const updated = await fetchSavedRoutes(currentUser.id);
+      setSavedRoutes(updated);
+    } catch (err) { console.error(err); }
+  };
+
+  // ─── Navigation handlers ───────────────────────────────────────────────────
+  const startNavigation = (saved, post) => {
+    setActiveNavigation({ savedRouteId: saved.id, postId: post.id, post });
+    setNavigatorPostId(null);
+  };
+
+  const startNavigationForPost = (postId) => {
+    const post = routes.find(r => r.id === postId);
+    if (!post) return;
+    setActiveNavigation({ postId: post.id, post });
+    setNavigatorPostId(null);
+  };
+
+  const completeNavigation = async (trackPoints, trackedKm) => {
+    if (!currentUser || !activeNavigation) return;
+    // Mark as completed and optionally save track data
+    try {
+      const savedRoute = savedRoutes.find(s => s.route_id === activeNavigation.postId);
+      if (savedRoute) {
+        await updateSavedRouteStatus(currentUser.id, activeNavigation.postId, "completed");
+        const updated = await fetchSavedRoutes(currentUser.id);
+        setSavedRoutes(updated);
+      }
+      // TODO: Save trackPoints to a new table for verified routes
+      console.log("Track completed:", { trackPoints: trackPoints.length, trackedKm });
+    } catch (err) { console.error(err); }
+    setActiveNavigation(null);
+  };
+
+  // ─── Create route handlers ─────────────────────────────────────────────────
   const updatePoints = (pts) => {
     const segCount = Math.max(0, pts.length - 1);
     const segs = Array.from({ length: segCount }, (_, i) => np.segments[i] || { roadType: "asfalto" });
@@ -935,8 +1106,7 @@ export default function App() {
     setNp((prev) => ({ ...prev, computing: true, routeError: "" }));
 
     try {
-      const geometries = [];
-      const kms = [];
+      const geometries = [], kms = [];
       for (let i = 0; i < np.points.length - 1; i++) {
         const result = await fetchSegmentRoute(np.points[i], np.points[i + 1]);
         if (reqId !== routeReqIdRef.current) return;
@@ -947,15 +1117,12 @@ export default function App() {
       const provinceResults = await Promise.all(np.points.map(fetchProvince));
       if (reqId !== routeReqIdRef.current) return;
 
-      const provinces = [...new Set(provinceResults.filter(Boolean))];
-      const totalKm = Math.round(kms.reduce((a, b) => a + b, 0) * 10) / 10;
-
       setNp((prev) => ({
         ...prev,
         segmentGeometries: geometries,
         segmentKm: kms,
-        totalKm,
-        provinces,
+        totalKm: Math.round(kms.reduce((a, b) => a + b, 0) * 10) / 10,
+        provinces: [...new Set(provinceResults.filter(Boolean))],
         computing: false,
         routeError: "",
       }));
@@ -967,9 +1134,8 @@ export default function App() {
 
   const submitPost = async () => {
     if (!currentUser || !np.title.trim() || np.points.length === 0) return;
-
     try {
-      await createRoute({
+      const newRoute = await createRoute({
         user_id: currentUser.id,
         type: np.type,
         title: np.title,
@@ -984,14 +1150,11 @@ export default function App() {
         place_type: np.type === "lugar" ? np.placeType : null,
         event_date: np.type === "evento" ? np.eventDate : null,
       });
-
+      setRoutes(prev => [transformRoute({ ...newRoute, profiles: currentUser, route_likes: [], route_comments: [] }), ...prev]);
       setNp(EMPTY_NP);
       setNpStep(1);
-      setView("feed");
-      setNavStack([]);
-    } catch (err) {
-      console.error("Error creating route:", err);
-    }
+      setView("feed"); setNavStack([]);
+    } catch (err) { console.error(err); }
   };
 
   // ─── Filtering ─────────────────────────────────────────────────────────────
@@ -1025,22 +1188,23 @@ export default function App() {
   const draftIsRoute = isRouteType(np.type);
   const routeComputed = np.segmentGeometries.length > 0;
   const canPublish = !!np.title.trim() && np.points.length > 0 && !(np.type === "lugar" && !np.placeType) && !(np.type === "evento" && !np.eventDate) && !(draftIsRoute && np.points.length >= 2 && !routeComputed);
-
   const inNav = !["auth", "new", "post", "profile"].includes(view);
 
   if (authLoading) {
-    return (
-      <div style={{ background: "#0f172a", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <LoadingSpinner />
-      </div>
-    );
+    return <div style={{ background: "#0f172a", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}><LoadingSpinner /></div>;
   }
 
   return (
     <div style={{ background: "#0f172a", minHeight: "100vh", color: "#f1f5f9", fontFamily: "system-ui,sans-serif", maxWidth: 480, margin: "0 auto" }}>
+      {/* Audio element */}
+      <audio id="br-audio" src={AUDIO_SRC} preload="auto" />
+
       {/* Header */}
       <div style={{ background: "#1e293b", padding: "12px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 100, borderBottom: "1px solid #334155" }}>
-        <span style={{ fontWeight: 800, fontSize: 20, color: "#f59e0b", cursor: "pointer" }} onClick={() => { setView("feed"); setNavStack([]); }}>🏍️ BuenaRuta</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontWeight: 800, fontSize: 20, color: "#f59e0b", cursor: "pointer" }} onClick={() => { setView("feed"); setNavStack([]); }}>🏍️ BuenaRuta</span>
+          <button onClick={playAudio} style={{ ...btn2, padding: "4px 8px", fontSize: 16 }} title="Escuchar intro">🎵</button>
+        </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           {currentUser ? (
             <>
@@ -1092,7 +1256,7 @@ export default function App() {
             <input placeholder="Email" type="email" style={{ ...inp, marginBottom: 10 }} value={authF.email} onChange={(e) => setAuthF({ ...authF, email: e.target.value })} />
             <input placeholder="Contraseña" type="password" style={{ ...inp, marginBottom: 10 }} value={authF.pass} onChange={(e) => setAuthF({ ...authF, pass: e.target.value })} onKeyDown={(e) => e.key === "Enter" && handleAuth()} />
 
-            {authErr && <p style={{ color: authErr.includes("Revisá") ? "#22c55e" : "#ef4444", fontSize: 13, marginBottom: 8 }}>{authErr}</p>}
+            {authErr && <p style={{ color: authErr.includes("✅") ? "#22c55e" : "#ef4444", fontSize: 13, marginBottom: 8 }}>{authErr}</p>}
 
             <button onClick={handleAuth} style={{ ...btn, width: "100%", padding: 12 }}>{authMode === "login" ? "Entrar" : "Registrarme"}</button>
 
@@ -1102,63 +1266,50 @@ export default function App() {
                 {authMode === "login" ? "Registrate" : "Iniciá sesión"}
               </span>
             </p>
-
-            <p style={{ color: "#475569", fontSize: 12, textAlign: "center", marginTop: 12 }}>Demo: moto@example.com / 1234</p>
           </div>
         )}
 
         {/* Feed View */}
         {view === "feed" && (
           <div>
-            {loading ? <LoadingSpinner /> : (
-              <>
-                <div style={{ background: "#1e293b", borderRadius: 14, padding: 12, marginBottom: 16, border: "1px solid #334155" }}>
-                  <input placeholder="Buscar rutas..." style={{ ...inp, marginBottom: 10 }} value={filters.text} onChange={(e) => setFilters(prev => ({ ...prev, text: e.target.value }))} />
-                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                    {[{ value: "recent", label: "Recientes" }, { value: "likes", label: "Más likes" }, { value: "km", label: "Más km" }].map((opt) => (
-                      <button key={opt.value} onClick={() => setFilters(prev => ({ ...prev, sortBy: opt.value }))} style={{
-                        ...btn2, padding: "6px 12px", borderRadius: 99,
-                        background: filters.sortBy === opt.value ? "#f59e0b" : "#0f172a",
-                        color: filters.sortBy === opt.value ? "#0f172a" : "#94a3b8",
-                      }}>{opt.label}</button>
-                    ))}
-                  </div>
-                </div>
+            {/* Saved Routes Panel */}
+            <SavedRoutesPanel savedRoutes={savedRoutes} routes={routes} currentUser={currentUser}
+              onOpenPost={goPostId} onStartNavigation={startNavigation} onToggleSaved={handleToggleSaved} onMarkCompleted={handleMarkCompleted} />
 
-                {currentUser && savedRoutes.length > 0 && (
-                  <div style={{ background: "#1e293b", borderRadius: 12, padding: 12, marginBottom: 14 }}>
-                    <h3 style={{ margin: "0 0 10px", color: "#f1f5f9", fontSize: 16 }}>⭐ Mis rutas guardadas ({savedRoutes.length})</h3>
-                    {savedRoutes.slice(0, 3).map((saved) => {
-                      const route = routes.find(r => r.id === saved.route_id);
-                      if (!route) return null;
-                      return (
-                        <div key={saved.route_id} onClick={() => goPostId(route.id)} style={{ background: "#0f172a", borderRadius: 10, padding: 10, marginBottom: 8, cursor: "pointer", border: "1px solid #334155" }}>
-                          <div style={{ color: "#f1f5f9", fontWeight: 600 }}>{route.title}</div>
-                          <div style={{ color: "#64748b", fontSize: 12 }}>{route.totalKm} km · {route.provinces?.join(", ")}</div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
+            {/* Quick Filters */}
+            <div style={{ background: "#1e293b", borderRadius: 14, padding: 12, marginBottom: 16, border: "1px solid #334155" }}>
+              <input placeholder="Buscar ruta..." style={{ ...inp, marginBottom: 10 }} value={filters.text} onChange={(e) => setFilters((prev) => ({ ...prev, text: e.target.value }))} />
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+                {[{ value: "likes", label: "Más likes" }, { value: "recent", label: "Recientes" }, { value: "km", label: "Más km" }].map((opt) => (
+                  <button key={opt.value} onClick={() => setFilters((prev) => ({ ...prev, sortBy: opt.value }))} style={{
+                    ...btn2, padding: "6px 12px", borderRadius: 99,
+                    background: filters.sortBy === opt.value ? "#f59e0b" : "#0f172a",
+                    color: filters.sortBy === opt.value ? "#0f172a" : "#94a3b8",
+                  }}>{opt.label}</button>
+                ))}
+              </div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                <button onClick={() => setFilters((prev) => ({ ...prev, province: "" }))} style={{
+                  ...btn2, padding: "6px 12px", borderRadius: 99,
+                  background: !filters.province ? "#f59e0b22" : "#0f172a",
+                  color: !filters.province ? "#f59e0b" : "#94a3b8",
+                }}>Todas</button>
+                {allProvinces.map((p) => (
+                  <button key={p} onClick={() => setFilters((prev) => ({ ...prev, province: prev.province === p ? "" : p }))} style={{
+                    ...btn2, padding: "6px 12px", borderRadius: 99,
+                    background: filters.province === p ? "#f59e0b22" : "#0f172a",
+                    color: filters.province === p ? "#f59e0b" : "#94a3b8",
+                  }}>{p}</button>
+                ))}
+              </div>
+            </div>
 
-                {filteredRoutes.length === 0 ? (
-                  <p style={{ color: "#64748b", textAlign: "center", marginTop: 30 }}>No hay rutas todavía. ¡Sé el primero en publicar!</p>
-                ) : (
-                  filteredRoutes.map((p) => (
-                    <PostCard key={p.id} post={p} currentUser={currentUser} onLike={handleLike} onComment={handleComment}
-                      goProfile={goProfile} goPostId={goPostId} savedRoutes={savedRoutes} onToggleSaved={handleToggleSaved}
-                      onOpenNavigatorModal={(id) => setNavigatorPostId(id)} />
-                  ))
-                )}
-
-                {!currentUser && (
-                  <div style={{ background: "#1e293b", borderRadius: 12, padding: 16, marginTop: 8, textAlign: "center", border: "1px solid #334155" }}>
-                    <p style={{ color: "#94a3b8", marginBottom: 10 }}>Creá tu cuenta para publicar y guardar rutas.</p>
-                    <button onClick={() => openView("auth")} style={{ ...btn, padding: "10px 24px" }}>Crear cuenta gratis</button>
-                  </div>
-                )}
-              </>
-            )}
+            {/* Route List */}
+            {filteredRoutes.length === 0 && <p style={{ color: "#64748b", textAlign: "center", marginTop: 30 }}>Sin resultados.</p>}
+            {filteredRoutes.map((p) => (
+              <PostCard key={p.id} post={p} currentUser={currentUser} onLike={handleLike} onComment={handleComment}
+                goProfile={goProfile} goPostId={goPostId} savedRoutes={savedRoutes} onToggleSaved={handleToggleSaved} onOpenNavigatorModal={setNavigatorPostId} />
+            ))}
           </div>
         )}
 
@@ -1166,41 +1317,46 @@ export default function App() {
         {view === "explore" && (
           <div>
             <div style={{ background: "#1e293b", borderRadius: 12, padding: 12, marginBottom: 14 }}>
-              <input placeholder="🔍 Buscar..." style={{ ...inp, marginBottom: 10 }} value={filters.text} onChange={(e) => setFilters(prev => ({ ...prev, text: e.target.value }))} />
+              <p style={{ color: "#94a3b8", margin: "0 0 10px", fontSize: 13 }}>Filtrar publicaciones</p>
+              <input placeholder="🔍 Buscar..." style={{ ...inp, marginBottom: 10 }} value={filters.text} onChange={(e) => setFilters((prev) => ({ ...prev, text: e.target.value }))} />
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
-                <select style={inp} value={filters.type} onChange={(e) => setFilters(prev => ({ ...prev, type: e.target.value }))}>
+                <select style={inp} value={filters.type} onChange={(e) => setFilters((prev) => ({ ...prev, type: e.target.value }))}>
                   <option value="all">Todos los tipos</option>
                   <option value="ruta">🛣️ Ruta</option>
                   <option value="viaje">🧳 Viaje</option>
                   <option value="lugar">📍 Lugar</option>
                   <option value="evento">🎉 Evento</option>
                 </select>
-                <select style={inp} value={filters.province} onChange={(e) => setFilters(prev => ({ ...prev, province: e.target.value }))}>
+                <select style={inp} value={filters.province} onChange={(e) => setFilters((prev) => ({ ...prev, province: e.target.value }))}>
                   <option value="">Todas las provincias</option>
                   {allProvinces.map((p) => <option key={p} value={p}>{p}</option>)}
                 </select>
               </div>
+              <select style={{ ...inp, marginBottom: 10 }} value={filters.sortBy} onChange={(e) => setFilters((prev) => ({ ...prev, sortBy: e.target.value }))}>
+                <option value="likes">Ordenar por: más likes</option>
+                <option value="recent">Ordenar por: más recientes</option>
+                <option value="km">Ordenar por: más km</option>
+              </select>
               {allTags.length > 0 && (
-                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                  {allTags.slice(0, 10).map((t) => (
-                    <span key={t} onClick={() => setFilters(prev => ({ ...prev, tag: prev.tag === t ? "" : t }))} style={{
-                      background: filters.tag === t ? "#f59e0b22" : "#0f172a", color: filters.tag === t ? "#f59e0b" : "#64748b",
-                      borderRadius: 99, padding: "3px 10px", fontSize: 12, cursor: "pointer", border: `1px solid ${filters.tag === t ? "#f59e0b" : "#334155"}`,
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+                  {allTags.map((t) => (
+                    <span key={t} onClick={() => setFilters((prev) => ({ ...prev, tag: prev.tag === t ? "" : t }))} style={{
+                      background: filters.tag === t ? "#f59e0b22" : "#0f172a",
+                      color: filters.tag === t ? "#f59e0b" : "#64748b",
+                      borderRadius: 99, padding: "3px 10px", fontSize: 12, cursor: "pointer",
+                      border: `1px solid ${filters.tag === t ? "#f59e0b" : "#334155"}`,
                     }}>#{t}</span>
                   ))}
                 </div>
               )}
+              <button onClick={() => setFilters(EMPTY_FILTERS)} style={{ ...btn2, width: "100%", padding: 10 }}>Limpiar filtros</button>
             </div>
 
-            {filteredRoutes.length === 0 ? (
-              <p style={{ color: "#64748b", textAlign: "center", marginTop: 30 }}>Sin resultados.</p>
-            ) : (
-              filteredRoutes.map((p) => (
-                <PostCard key={p.id} post={p} currentUser={currentUser} onLike={handleLike} onComment={handleComment}
-                  goProfile={goProfile} goPostId={goPostId} savedRoutes={savedRoutes} onToggleSaved={handleToggleSaved}
-                  onOpenNavigatorModal={(id) => setNavigatorPostId(id)} />
-              ))
-            )}
+            {filteredRoutes.length === 0 && <p style={{ color: "#64748b", textAlign: "center", marginTop: 30 }}>Sin resultados.</p>}
+            {filteredRoutes.map((p) => (
+              <PostCard key={p.id} post={p} currentUser={currentUser} onLike={handleLike} onComment={handleComment}
+                goProfile={goProfile} goPostId={goPostId} savedRoutes={savedRoutes} onToggleSaved={handleToggleSaved} onOpenNavigatorModal={setNavigatorPostId} />
+            ))}
           </div>
         )}
 
@@ -1217,7 +1373,7 @@ export default function App() {
               <>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 14 }}>
                   {Object.entries(TYPE_META).map(([k, v]) => (
-                    <button key={k} onClick={() => setNp(prev => ({ ...prev, type: k }))} style={{
+                    <button key={k} onClick={() => setNp((prev) => ({ ...prev, type: k }))} style={{
                       background: np.type === k ? v.color + "22" : "#1e293b",
                       border: `2px solid ${np.type === k ? v.color : "#334155"}`,
                       borderRadius: 10, padding: 14, cursor: "pointer",
@@ -1226,37 +1382,37 @@ export default function App() {
                   ))}
                 </div>
 
-                <input placeholder="Título *" style={{ ...inp, marginBottom: 10 }} value={np.title} onChange={(e) => setNp(prev => ({ ...prev, title: e.target.value }))} />
-                <textarea placeholder="Descripción" style={{ ...inp, marginBottom: 10, minHeight: 76, resize: "vertical" }} value={np.desc} onChange={(e) => setNp(prev => ({ ...prev, desc: e.target.value }))} />
+                <input placeholder="Título *" style={{ ...inp, marginBottom: 10 }} value={np.title} onChange={(e) => setNp((prev) => ({ ...prev, title: e.target.value }))} />
+                <textarea placeholder="Descripción" style={{ ...inp, marginBottom: 10, minHeight: 76, resize: "vertical" }} value={np.desc} onChange={(e) => setNp((prev) => ({ ...prev, desc: e.target.value }))} />
 
                 {np.type === "lugar" && (
-                  <select style={{ ...inp, marginBottom: 10 }} value={np.placeType} onChange={(e) => setNp(prev => ({ ...prev, placeType: e.target.value }))}>
+                  <select style={{ ...inp, marginBottom: 10 }} value={np.placeType} onChange={(e) => setNp((prev) => ({ ...prev, placeType: e.target.value }))}>
                     <option value="">Tipo de lugar *</option>
                     {PLACE_TYPES.map((t) => <option key={t}>{t}</option>)}
                   </select>
                 )}
-
                 {np.type === "evento" && (
-                  <input type="date" style={{ ...inp, marginBottom: 10 }} value={np.eventDate} onChange={(e) => setNp(prev => ({ ...prev, eventDate: e.target.value }))} />
+                  <input type="date" style={{ ...inp, marginBottom: 10 }} value={np.eventDate} onChange={(e) => setNp((prev) => ({ ...prev, eventDate: e.target.value }))} />
                 )}
 
                 <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
                   <input placeholder="Etiqueta + Enter" style={{ ...inp, flex: 1 }} value={np.tagInput}
-                    onChange={(e) => setNp(prev => ({ ...prev, tagInput: e.target.value }))}
+                    onChange={(e) => setNp((prev) => ({ ...prev, tagInput: e.target.value }))}
                     onKeyDown={(e) => {
                       if (e.key === "Enter") {
                         const tag = np.tagInput.trim().toLowerCase();
-                        if (tag && !np.tags.includes(tag)) setNp(prev => ({ ...prev, tags: [...prev.tags, tag], tagInput: "" }));
+                        if (tag && !np.tags.includes(tag)) setNp((prev) => ({ ...prev, tags: [...prev.tags, tag], tagInput: "" }));
+                        else setNp((prev) => ({ ...prev, tagInput: "" }));
                       }
                     }} />
                   <button onClick={() => {
                     const tag = np.tagInput.trim().toLowerCase();
-                    if (tag && !np.tags.includes(tag)) setNp(prev => ({ ...prev, tags: [...prev.tags, tag], tagInput: "" }));
+                    if (tag && !np.tags.includes(tag)) setNp((prev) => ({ ...prev, tags: [...prev.tags, tag], tagInput: "" }));
+                    else setNp((prev) => ({ ...prev, tagInput: "" }));
                   }} style={{ ...btn2, padding: "8px 12px" }}>+</button>
                 </div>
-
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 16 }}>
-                  {np.tags.map((t) => <Badge key={t} tag={t} onRemove={() => setNp(prev => ({ ...prev, tags: prev.tags.filter(x => x !== t) }))} />)}
+                  {np.tags.map((t) => <Badge key={t} tag={t} onRemove={() => setNp((prev) => ({ ...prev, tags: prev.tags.filter((x) => x !== t) }))} />)}
                 </div>
 
                 <button onClick={() => setNpStep(2)} disabled={!np.title.trim()} style={{ ...btn, width: "100%", padding: 12, opacity: !np.title.trim() ? 0.5 : 1 }}>
@@ -1268,30 +1424,29 @@ export default function App() {
             {npStep === 2 && (
               <>
                 <LocationSearch onSelect={(lat, lng) => updatePoints(normalizePoints([...np.points, { lat, lng }]))} />
-                <p style={{ color: "#64748b", fontSize: 12, marginBottom: 6 }}>Tocá el mapa para agregar puntos</p>
-                <MapPicker points={np.points} onChange={updatePoints} segmentGeometries={np.segmentGeometries} segmentTypes={np.segments.map(s => s.roadType)} />
+                <p style={{ color: "#64748b", fontSize: 12, marginBottom: 6 }}>Tocá el mapa para agregar puntos · Clic derecho para eliminar</p>
+                <MapPicker points={np.points} onChange={updatePoints} readonly={false} segmentGeometries={np.segmentGeometries} segmentTypes={np.segments.map((s) => s.roadType)} />
 
-                {draftIsRoute && <SegmentEditor points={np.points} segments={np.segments} onChange={(segs) => setNp(prev => resetRouteDerived({ ...prev, segments: segs }))} />}
+                {draftIsRoute && <SegmentEditor points={np.points} segments={np.segments} onChange={(segs) => setNp((prev) => resetRouteDerived({ ...prev, segments: segs }))} />}
 
                 {draftIsRoute && np.points.length >= 2 && (
                   <button onClick={computeRoute} disabled={np.computing} style={{ ...btn2, width: "100%", padding: 10, marginTop: 10, opacity: np.computing ? 0.6 : 1 }}>
                     {np.computing ? "⏳ Calculando..." : routeComputed ? "🔄 Recalcular ruta" : "📐 Calcular ruta *"}
                   </button>
                 )}
-
                 {np.routeError && <p style={{ color: "#ef4444", fontSize: 13, marginTop: 6, textAlign: "center" }}>⚠️ {np.routeError}</p>}
                 {routeComputed && <RouteSummary totalKm={np.totalKm} provinces={np.provinces} segments={np.segments} segmentKm={np.segmentKm} />}
 
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 8 }}>
                   {np.points.map((p, i) => (
                     <span key={i} style={{ background: "#1e293b", color: "#94a3b8", borderRadius: 99, padding: "3px 10px", fontSize: 12 }}>
-                      {i === 0 ? "🟢" : i === np.points.length - 1 ? "🔴" : "🟡"} {p.label}
+                      {i === 0 ? "🟢" : i === np.points.length - 1 && np.points.length > 1 ? "🔴" : "🟡"} {p.label}
                     </span>
                   ))}
                 </div>
 
                 {np.points.length > 0 && (
-                  <button onClick={() => setNp(prev => resetRouteDerived({ ...prev, points: [], segments: [] }))} style={{ ...btn2, marginTop: 8, padding: "6px 12px", fontSize: 12 }}>
+                  <button onClick={() => setNp((prev) => resetRouteDerived({ ...prev, points: [], segments: [] }))} style={{ ...btn2, marginTop: 8, padding: "6px 12px", fontSize: 12 }}>
                     🗑 Limpiar puntos
                   </button>
                 )}
@@ -1311,19 +1466,21 @@ export default function App() {
 
         {/* Post Detail View */}
         {view === "post" && activePostId && (() => {
-          const post = routes.find(r => r.id === activePostId);
-          if (!post) return <p style={{ color: "#64748b" }}>Ruta no encontrada</p>;
-          const segmentTypes = post.segments?.map(s => typeof s === 'string' ? s : s.roadType) || [];
+          const post = routes.find((p) => p.id === activePostId);
+          if (!post) return <p style={{ color: "#64748b" }}>Publicación no encontrada.</p>;
+          const meta = TYPE_META[post.type];
+          const saved = currentUser && savedRoutes?.some((r) => r.route_id === post.id);
 
           return (
             <>
               <button onClick={goBack} style={{ ...btn2, padding: "6px 12px", marginBottom: 14 }}>← Volver</button>
 
               <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 12 }}>
-                <div onClick={() => goProfile(post.author?.id)} style={{ cursor: "pointer" }}><Avatar username={post.author?.username} size={42} /></div>
+                <div onClick={() => goProfile(post.userId)} style={{ cursor: "pointer" }}><Avatar username={post.author?.username} size={42} /></div>
                 <div>
-                  <span style={{ color: "#f8fafc", fontWeight: 700, cursor: "pointer" }} onClick={() => goProfile(post.author?.id)}>@{post.author?.username}</span>
-                  {post.author?.moto && <p style={{ color: "#f59e0b", fontSize: 12, margin: "2px 0 0" }}>🏍️ {post.author.moto.modelo}</p>}
+                  <span style={{ color: "#f8fafc", fontWeight: 700, cursor: "pointer" }} onClick={() => goProfile(post.userId)}>@{post.author?.username}</span>
+                  {post.author?.moto && <p style={{ color: "#f59e0b", fontSize: 12, margin: "2px 0 0" }}>🏍️ {post.author.moto.modelo} · {post.author.moto.cilindrada}cc · {post.author.moto.anio}</p>}
+                  <div style={{ color: meta.color, fontSize: 13, marginTop: 2 }}>{meta.icon} {meta.label}</div>
                 </div>
               </div>
 
@@ -1334,21 +1491,17 @@ export default function App() {
                 {(post.tags || []).map((t) => <Badge key={t} tag={t} />)}
               </div>
 
-              {isRouteType(post.type) && post.totalKm > 0 && (
-                <RouteSummary totalKm={post.totalKm} provinces={post.provinces} segments={post.segments} segmentKm={post.segmentKm} />
-              )}
+              {isRouteType(post.type) && post.totalKm > 0 && <RouteSummary totalKm={post.totalKm} provinces={post.provinces} segments={post.segments} segmentKm={post.segmentKm} />}
 
               {currentUser && isNavigableRoute(post) && (
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 16 }}>
-                  <button onClick={() => handleToggleSaved(post.id)} style={{ ...btn, padding: "10px 14px" }}>
-                    {savedRoutes.find(r => r.route_id === post.id) ? "⭐ Guardada" : "⭐ Guardar ruta"}
-                  </button>
-                  <button onClick={() => setNavigatorPostId(post.id)} style={{ ...btn2, padding: "10px 14px" }}>🚀 Hacer esta ruta</button>
+                  <button onClick={() => { playAudio(); handleToggleSaved(post.id); }} style={{ ...btn, padding: "10px 14px" }}>{saved ? "⭐ Guardada" : "⭐ Guardar ruta"}</button>
+                  <button onClick={() => { playAudio(); setNavigatorPostId(post.id); }} style={{ ...btn2, padding: "10px 14px" }}>🚀 Hacer esta ruta</button>
                 </div>
               )}
 
               <div style={{ marginTop: 12 }}>
-                <MapPicker points={post.points} onChange={() => {}} readonly segmentGeometries={post.segmentGeometries} segmentTypes={segmentTypes} />
+                <MapPicker points={post.points} onChange={() => {}} readonly segmentGeometries={post.segmentGeometries} segmentTypes={post.segments?.map((s) => s.roadType)} />
               </div>
 
               <div style={{ marginTop: 16 }}>
@@ -1364,15 +1517,10 @@ export default function App() {
                 ))}
                 {currentUser && (
                   <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
-                    <input id="comment-input" placeholder="Escribí un comentario..." style={{ ...inp, flex: 1 }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && e.target.value.trim()) {
-                          handleComment(post.id, e.target.value.trim());
-                          e.target.value = "";
-                        }
-                      }} />
+                    <input id="comment-detail" placeholder="Escribí un comentario..." style={{ ...inp, flex: 1 }}
+                      onKeyDown={(e) => { if (e.key === "Enter" && e.target.value.trim()) { handleComment(post.id, e.target.value.trim()); e.target.value = ""; } }} />
                     <button onClick={() => {
-                      const input = document.getElementById("comment-input");
+                      const input = document.getElementById("comment-detail");
                       if (input?.value.trim()) { handleComment(post.id, input.value.trim()); input.value = ""; }
                     }} style={{ ...btn, padding: "8px 14px" }}>↑</button>
                   </div>
@@ -1384,26 +1532,22 @@ export default function App() {
 
         {/* Profile View */}
         {view === "profile" && activeProfileId && (
-          <ProfileView
-            profileId={activeProfileId}
-            currentUser={currentUser}
-            routes={routes}
-            goBack={goBack}
-            goPostId={goPostId}
-            handleLike={handleLike}
-            handleComment={handleComment}
-            savedRoutes={savedRoutes}
-            handleToggleSaved={handleToggleSaved}
-            setNavigatorPostId={setNavigatorPostId}
-            handleLogout={handleLogout}
-          />
+          <ProfileView profileId={activeProfileId} currentUser={currentUser} routes={routes}
+            goBack={goBack} goPostId={goPostId} handleLike={handleLike} handleComment={handleComment}
+            savedRoutes={savedRoutes} handleToggleSaved={handleToggleSaved} setNavigatorPostId={setNavigatorPostId} handleLogout={handleLogout} />
         )}
       </div>
 
       {/* Navigator Modal */}
       {navigatorPost && (
         <NavigatorChooserModal post={navigatorPost} onClose={() => setNavigatorPostId(null)}
-          onChooseApp={(app) => { openExternalNavigator(navigatorPost, app); setNavigatorPostId(null); }} />
+          onChooseApp={(app) => { openExternalNavigator(navigatorPost, app); setNavigatorPostId(null); }}
+          onStartInternal={() => startNavigationForPost(navigatorPost.id)} />
+      )}
+
+      {/* Active Navigation */}
+      {activeNavigation && activeNavigation.post && (
+        <ActiveNavigation post={activeNavigation.post} onClose={() => setActiveNavigation(null)} onComplete={completeNavigation} />
       )}
     </div>
   );
