@@ -1914,7 +1914,24 @@ function MapPicker({
 
     loadLeaflet()
       .then((L) => {
-        if (cancelled || !ref.current || mapRef.current) return;
+        if (cancelled || !ref.current) return;
+
+        // Si ya existe el mapa, solo redibujar capas
+        if (mapRef.current) {
+          renderMapLayers(
+            L,
+            mapRef.current,
+            points,
+            segmentGeometries,
+            segmentTypes,
+            layersRef,
+            readonly,
+            onChange,
+            ptRef,
+            onDeletePoint
+          );
+          return;
+        }
 
         const center = points.length
           ? [points[0].lat, points[0].lng]
@@ -1937,30 +1954,27 @@ function MapPicker({
             onChange(updated);
           });
         }
+
+        // Dibujar capas inmediatamente después de crear el mapa
+        renderMapLayers(
+          L,
+          map,
+          points,
+          segmentGeometries,
+          segmentTypes,
+          layersRef,
+          readonly,
+          onChange,
+          ptRef,
+          onDeletePoint
+        );
       })
       .catch(console.error);
 
     return () => {
       cancelled = true;
     };
-  }, [readonly, onChange, points]);
-
-  useEffect(() => {
-    if (!mapRef.current || !window.L) return;
-
-    renderMapLayers(
-      window.L,
-      mapRef.current,
-      points,
-      segmentGeometries,
-      segmentTypes,
-      layersRef,
-      readonly,
-      onChange,
-      ptRef,
-      onDeletePoint
-    );
-  }, [points, segmentGeometries, segmentTypes, readonly, onChange, onDeletePoint]);
+  }, [readonly, onChange, points, segmentGeometries, segmentTypes, onDeletePoint]);
 
   useEffect(() => {
     return () => {
