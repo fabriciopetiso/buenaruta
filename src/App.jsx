@@ -512,18 +512,72 @@ const getInitialSession = () => LS.get("br_session", null);
 const getInitialSavedRoutes = () => LS.get("br_saved_routes", []);
 
 // ── APIs ─────────────────────────────────────────────────────────────────────
-const fetchSegmentRoute = async (p1, p2) => {
-  const url = `https://router.project-osrm.org/route/v1/driving/${p1.lng},${p1.lat};${p2.lng},${p2.lat}?overview=full&geometries=geojson`;
-  const r = await fetch(url);
-  if (!r.ok) throw new Error("Error consultando el servicio de rutas");
-  const data = await r.json();
-  if (data.code !== "Ok") {
-    throw new Error("OSRM no encontró ruta entre esos puntos");
+// ── Route geometry cache ─────────────────────────────────────────────────────
+const routeCache = {
+  get(p1, p2) {
+    try {
+      const key = `route:${p1.lat.toFixed(4)},${p1.lng.toFixed(4)}-${p2.lat.toFixed(4)},${p2.lng.toFixed(4)}`;
+      const cached = localStorage.getItem(key);
+      if (cached) {
+        const data = JSON.parse(cached);
+        // Cache válido por 7 días
+        if (Date.now() - data.ts < 7 * 24 * 60 * 60 * 1000) {
+          return data.value;
+        }
+        localStorage.removeItem(key);
+      }
+    } catch {}
+    return null;
+  },
+  set(p1, p2, value) {
+    try {
+      const key = `route:${p1.lat.toFixed(4)},${p1.lng.toFixed(4)}-${p2.lat.toFixed(4)},${p2.lng.toFixed(4)}`;
+      localStorage.setItem(key, JSON.stringify({ ts: Date.now(), value }));
+    } catch {}
   }
-  return {
-    geometry: data.routes[0].geometry.coordinates.map(([lng, lat]) => [lat, lng]),
-    km: Math.round(data.routes[0].distance / 100) / 10,
-  };
+};
+
+const fetchSegmentRoute = async (p1, p2, signal) => {
+  // Check cache first
+  const cached = routeCache.get(p1, p2);
+  if (cached) return cached;
+
+  const url = `https://router.project-osrm.org/route/v1/driving/${p1.lng},${p1.lat};${p2.lng},${p2.lat}?overview=full&geometries=geojson`;
+  
+  // Create timeout if no signal provided
+  const controller = signal ? null : new AbortController();
+  const timeoutId = controller ? setTimeout(() => controller.abort(), 10000) : null;
+  
+  try {
+    const r = await fetch(url, { 
+      signal: signal || controller?.signal,
+      headers: { 'Accept': 'application/json' }
+    });
+    
+    if (timeoutId) clearTimeout(timeoutId);
+    
+    if (!r.ok) throw new Error("Error consultando el servicio de rutas");
+    const data = await r.json();
+    if (data.code !== "Ok") {
+      throw new Error("OSRM no encontró ruta entre esos puntos");
+    }
+    
+    const result = {
+      geometry: data.routes[0].geometry.coordinates.map(([lng, lat]) => [lat, lng]),
+      km: Math.round(data.routes[0].distance / 100) / 10,
+    };
+    
+    // Save to cache
+    routeCache.set(p1, p2, result);
+    
+    return result;
+  } catch (e) {
+    if (timeoutId) clearTimeout(timeoutId);
+    if (e.name === 'AbortError') {
+      throw new Error("Timeout: el servicio de rutas tardó demasiado");
+    }
+    throw e;
+  }
 };
 
 const fetchProvince = async (point) => {
@@ -932,15 +986,6 @@ function HomeHero({
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 14 }}>
         <button onClick={() => onOpenPost(post.id)} style={{ ...btn, padding: "10px 14px" }}>Ver ruta destacada</button>
-        <button onClick={() => {
-          const audio = document.querySelector('audio[data-landing-intro="true"]');
-          if (audio) {
-            audio.volume = 0.85;
-            audio.currentTime = 0;
-            audio.play().catch(() => {});
-          }
-          onExplore();
-        }} style={{ ...btn2, padding: "10px 14px" }}>🔊 Escuchar intro</button>
         {currentUser ? (
           <>
             <button onClick={() => onToggleSaved(post.id)} style={{ ...btn2, padding: "10px 14px" }}>
@@ -2795,8 +2840,6 @@ export default function App() {
 
   const [deletedPointInfo, setDeletedPointInfo] = useState(null);
   const routeReqIdRef = useRef(0);
-  const landingAudioRef = useRef(null);
-  const landingAudioPlayedRef = useRef(false);
 
   const cu = session ? users.find((u) => u.id === session.id) : null;
   const navigatorPost = navigatorPostId ? posts.find((p) => p.id === navigatorPostId) : null;
@@ -2824,48 +2867,7 @@ export default function App() {
     return () => clearTimeout(t);
   }, [deletedPointInfo]);
 
-  useEffect(() => {
-    const audio = landingAudioRef.current;
-    if (!audio || view !== "feed") return;
-
-    if (typeof sessionStorage !== "undefined" && sessionStorage.getItem("br_intro_played") === "1") {
-      landingAudioPlayedRef.current = true;
-      return;
-    }
-
-    if (landingAudioPlayedRef.current) return;
-
-    const markPlayed = () => {
-      landingAudioPlayedRef.current = true;
-      try {
-        sessionStorage.setItem("br_intro_played", "1");
-      } catch {}
-    };
-
-    const tryPlay = () => {
-      audio.volume = 0.85;
-      audio.currentTime = 0;
-      const p = audio.play();
-      if (p && typeof p.then === "function") {
-        p.then(markPlayed).catch(() => {});
-      }
-    };
-
-    tryPlay();
-
-    const onFirstInteraction = () => {
-      if (landingAudioPlayedRef.current) return;
-      tryPlay();
-    };
-
-    window.addEventListener("pointerdown", onFirstInteraction, { once: true });
-    window.addEventListener("keydown", onFirstInteraction, { once: true });
-
-    return () => {
-      window.removeEventListener("pointerdown", onFirstInteraction);
-      window.removeEventListener("keydown", onFirstInteraction);
-    };
-  }, [view]);
+  // Audio is now manual only - triggered by 🎵 button in header
 
   const openView = (nextView, payloadFn) => {
     setNavStack((prev) => [...prev, view]);
@@ -3332,7 +3334,7 @@ export default function App() {
         margin: "0 auto",
       }}
     >
-      <audio ref={landingAudioRef} data-landing-intro="true" preload="auto" src={LANDING_AUDIO_SRC} />
+      <audio data-landing-intro="true" preload="none" src={LANDING_AUDIO_SRC} />
       <div
         style={{
           background: "#1e293b",
@@ -3361,7 +3363,40 @@ export default function App() {
           🏍️ BuenaRuta
         </span>
 
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <button
+          onClick={() => {
+            const audio = document.querySelector('audio[data-landing-intro="true"]');
+            if (audio) {
+              if (audio.paused) {
+                audio.volume = 0.85;
+                audio.currentTime = 0;
+                audio.play().catch(() => {});
+              } else {
+                audio.pause();
+              }
+            }
+          }}
+          onMouseEnter={() => {
+            const audio = document.querySelector('audio[data-landing-intro="true"]');
+            if (audio) audio.load();
+          }}
+          aria-label="Reproducir audio de intro"
+          style={{
+            background: "none",
+            border: "none",
+            fontSize: 18,
+            cursor: "pointer",
+            padding: "4px 8px",
+            opacity: 0.8,
+            transition: "opacity 0.2s",
+          }}
+          onMouseOver={(e) => e.currentTarget.style.opacity = 1}
+          onMouseOut={(e) => e.currentTarget.style.opacity = 0.8}
+        >
+          🎵
+        </button>
+
+        <div style={{ display: "flex", gap: 8, alignItems: "center", marginLeft: "auto" }}>
           {cu ? (
             <>
               <button
