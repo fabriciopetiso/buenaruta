@@ -3422,7 +3422,7 @@ export default function App() {
             src="/icon-192.png" 
             alt="BuenaRuta" 
             style={{ 
-              height: 36, 
+              height: 48, 
               width: "auto",
               borderRadius: 6,
             }} 
