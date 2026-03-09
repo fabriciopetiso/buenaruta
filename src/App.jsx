@@ -3406,11 +3406,11 @@ export default function App() {
           borderBottom: "1px solid #334155",
         }}
       >
-        <span
+        <div
           style={{
-            fontWeight: 800,
-            fontSize: 20,
-            color: "#f59e0b",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
             cursor: "pointer",
           }}
           onClick={() => {
@@ -3418,8 +3418,16 @@ export default function App() {
             setNavStack([]);
           }}
         >
-          🏍️ BuenaRuta
-        </span>
+          <img 
+            src="/icon-192.png" 
+            alt="BuenaRuta" 
+            style={{ 
+              height: 36, 
+              width: "auto",
+              borderRadius: 6,
+            }} 
+          />
+        </div>
 
         <button
           onClick={() => {
