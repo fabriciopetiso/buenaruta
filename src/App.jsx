@@ -244,27 +244,31 @@ function useOnScreen(ref) {
     const element = ref.current;
     if (!element) return;
 
-    // Verificar inmediatamente si ya está visible (antes de que el observer corra)
-    const rect = element.getBoundingClientRect();
-    const windowHeight = window.innerHeight || document.documentElement.clientHeight;
-    const windowWidth = window.innerWidth || document.documentElement.clientWidth;
+    const check = () => {
+      const rect = element.getBoundingClientRect();
+      const windowHeight = window.innerHeight || document.documentElement.clientHeight;
+      const windowWidth = window.innerWidth || document.documentElement.clientWidth;
+      if (rect.top < windowHeight && rect.bottom > 0 && rect.left < windowWidth && rect.right > 0 && rect.height > 0) {
+        setIntersecting(true);
+        return true;
+      }
+      return false;
+    };
 
-    const verticallyVisible = rect.top < windowHeight && rect.bottom > 0;
-    const horizontallyVisible = rect.left < windowWidth && rect.right > 0;
+    // Chequeo inmediato
+    if (check()) return;
 
-    if (verticallyVisible && horizontallyVisible) {
-      setIntersecting(true);
-    }
+    // Si no está listo, usar ResizeObserver para detectar cuando el elemento tiene dimensiones
+    const ro = new ResizeObserver(() => { if (check()) ro.disconnect(); });
+    ro.observe(element);
 
-    // Observer para cambios futuros
-    const observer = new IntersectionObserver(
-      ([entry]) => { setIntersecting(entry.isIntersecting); },
-      { threshold: 0.1 }
-    );
+    // También IntersectionObserver como fallback
+    const io = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) { setIntersecting(true); io.disconnect(); ro.disconnect(); }
+    }, { threshold: 0 });
+    io.observe(element);
 
-    observer.observe(element);
-
-    return () => observer.disconnect();
+    return () => { ro.disconnect(); io.disconnect(); };
   }, [ref]);
 
   return isIntersecting;
