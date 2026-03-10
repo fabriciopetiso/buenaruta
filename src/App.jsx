@@ -193,43 +193,51 @@ const fetchProvince = async (point) => {
 };
 
 // ── Transform Supabase data to app format ────────────────────────────────────
-const transformRoute = (r) => ({
-  id: r.id,
-  type: r.type,
-  userId: r.user_id,
-  title: r.title,
-  desc: r.description,
-  tags: r.tags || [],
-  points: r.points || [],
-  segments: r.segments || [],
-  segmentGeometries: r.segment_geometries || [],
-  segmentKm: r.segment_km || [],
-  totalKm: r.total_km || 0,
-  provinces: r.provinces || [],
-  placeType: r.place_type,
-  eventDate: r.event_date,
-  likes: (r.route_likes || []).map((l) => l.user_id),
-  comments: (r.route_comments || []).map((c) => ({
-    id: c.id,
-    odId: c.user_id,
-    text: c.text,
-    createdAt: new Date(c.created_at).getTime(),
-    username: c.profiles?.username || "usuario",
-  })),
-  createdAt: new Date(r.created_at).getTime(),
-  author: r.profiles ? {
-    id: r.profiles.id,
-    username: r.profiles.username,
-    moto: r.profiles.moto_modelo ? {
-      modelo: r.profiles.moto_modelo,
-      cilindrada: r.profiles.moto_cilindrada,
-      anio: r.profiles.moto_anio,
+const transformRoute = (r) => {
+  const placeType = r.place_type || null;
+  let points = r.points || [];
+  // Si es lugar con 1 punto, corregir el label con placeType
+  if (r.type === "lugar" && points.length === 1 && placeType) {
+    points = [{ ...points[0], label: placeType }];
+  }
+  return {
+    id: r.id,
+    type: r.type,
+    userId: r.user_id,
+    title: r.title,
+    desc: r.description,
+    tags: r.tags || [],
+    points,
+    segments: r.segments || [],
+    segmentGeometries: r.segment_geometries || [],
+    segmentKm: r.segment_km || [],
+    totalKm: r.total_km || 0,
+    provinces: r.provinces || [],
+    placeType,
+    eventDate: r.event_date,
+    likes: (r.route_likes || []).map((l) => l.user_id),
+    comments: (r.route_comments || []).map((c) => ({
+      id: c.id,
+      odId: c.user_id,
+      text: c.text,
+      createdAt: new Date(c.created_at).getTime(),
+      username: c.profiles?.username || "usuario",
+    })),
+    createdAt: new Date(r.created_at).getTime(),
+    author: r.profiles ? {
+      id: r.profiles.id,
+      username: r.profiles.username,
+      moto: r.profiles.moto_modelo ? {
+        modelo: r.profiles.moto_modelo,
+        cilindrada: r.profiles.moto_cilindrada,
+        anio: r.profiles.moto_anio,
+      } : null,
     } : null,
-  } : null,
-});
+  };
+};
 
 // ── Hooks ────────────────────────────────────────────────────────────────────
-function useOnScreen(ref, rootMargin = "150px") {
+function useOnScreen(ref, rootMargin = "400px") {
   const [visible, setVisible] = useState(false);
   useEffect(() => {
     if (!ref.current || visible) return;
@@ -604,50 +612,69 @@ const renderMapLayers = (L, map, points, segmentGeometries, segmentTypes, layers
 };
 
 // ── MiniMap ──────────────────────────────────────────────────────────────────
-function MiniMap({ points, segmentGeometries, segmentTypes, lugares = [] }) {
+function MiniMap({ points, segmentGeometries, segmentTypes, lugares = [], placeType }) {
   const wrapperRef = useRef(null);
   const visible = useOnScreen(wrapperRef);
   const ref = useRef(null);
   const mapRef = useRef(null);
   const layersRef = useRef([]);
   const lugaresLayerRef = useRef([]);
+  const initializedRef = useRef(false);
 
+  // Efecto 1: init del mapa UNA SOLA VEZ cuando se hace visible
   useEffect(() => {
-    if (!visible) return;
+    if (!visible || initializedRef.current) return;
     let cancelled = false;
     loadLeaflet().then((L) => {
-      if (cancelled || !ref.current) return;
-      if (!mapRef.current) {
-        const center = points.length ? [points[0].lat, points[0].lng] : [-31.4, -64.18];
-        const map = L.map(ref.current, { zoomControl: false, dragging: false, scrollWheelZoom: false, doubleClickZoom: false, touchZoom: false, boxZoom: false, keyboard: false }).setView(center, 9);
-        mapRef.current = map;
-        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "", maxZoom: 19 }).addTo(map);
-      }
-      // Renderizar capas inmediatamente después de crear el mapa
-      renderMapLayers(L, mapRef.current, points, segmentGeometries, segmentTypes, layersRef, true, null, null, null, null);
-      // Renderizar lugares como capa permanente
-      lugaresLayerRef.current.forEach(l => l.remove?.());
-      lugaresLayerRef.current = [];
-      lugares.forEach((lugar) => {
-        if (!lugar.points?.[0]) return;
-        const icon = L.divIcon({
-          html: `<div style="background:#10b981;width:8px;height:8px;border-radius:50%;border:2px solid #fff;box-shadow:0 1px 4px #0009"></div>`,
-          iconSize: [8, 8], iconAnchor: [4, 4], className: "",
-        });
-        const m = L.marker([lugar.points[0].lat, lugar.points[0].lng], { icon })
-          .bindPopup(`<b>${lugar.title}</b><br/>${lugar.placeType || ""}`)
-          .addTo(mapRef.current);
-        lugaresLayerRef.current.push(m);
-      });
+      if (cancelled || !ref.current || mapRef.current) return;
+      const center = points.length ? [points[0].lat, points[0].lng] : [-31.4, -64.18];
+      const map = L.map(ref.current, {
+        zoomControl: false, dragging: false, scrollWheelZoom: false,
+        doubleClickZoom: false, touchZoom: false, boxZoom: false, keyboard: false,
+      }).setView(center, 9);
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "", maxZoom: 19 }).addTo(map);
+      mapRef.current = map;
+      initializedRef.current = true;
+      // Capas inmediatamente al crear
+      const dp = placeType && points.length === 1 ? [{ ...points[0], label: placeType }] : points;
+      renderMapLayers(L, map, dp, segmentGeometries, segmentTypes, layersRef, true, null, null, null, null);
     }).catch(console.error);
     return () => { cancelled = true; };
-  }, [visible, points, segmentGeometries, segmentTypes, lugares]);
+  }, [visible]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Efecto 2: re-renderizar puntos si cambian (sin re-crear el mapa)
+  useEffect(() => {
+    if (!initializedRef.current || !mapRef.current || !window.L) return;
+    const dp = placeType && points.length === 1 ? [{ ...points[0], label: placeType }] : points;
+    renderMapLayers(window.L, mapRef.current, dp, segmentGeometries, segmentTypes, layersRef, true, null, null, null, null);
+  }, [points, segmentGeometries, segmentTypes, placeType]);
+
+  // Efecto 3: capa de lugares, separada para no tocar el mapa base
+  useEffect(() => {
+    if (!initializedRef.current || !mapRef.current || !window.L) return;
+    const L = window.L;
+    lugaresLayerRef.current.forEach(l => l.remove?.());
+    lugaresLayerRef.current = [];
+    lugares.forEach((lugar) => {
+      if (!lugar.points?.[0]) return;
+      const icon = L.divIcon({
+        html: `<div style="background:#10b981;width:8px;height:8px;border-radius:50%;border:2px solid #fff;box-shadow:0 1px 4px #0009"></div>`,
+        iconSize: [8, 8], iconAnchor: [4, 4], className: "",
+      });
+      const m = L.marker([lugar.points[0].lat, lugar.points[0].lng], { icon })
+        .bindPopup(`<b>${lugar.title}</b><br/><i style="color:#94a3b8">${lugar.placeType || ""}</i>`)
+        .addTo(mapRef.current);
+      lugaresLayerRef.current.push(m);
+    });
+  }, [lugares]);
+
+  // Cleanup al desmontar
   useEffect(() => {
     return () => {
       layersRef.current.forEach((l) => l.remove?.());
       lugaresLayerRef.current.forEach((l) => l.remove?.());
       if (mapRef.current) { mapRef.current.remove(); mapRef.current = null; }
+      initializedRef.current = false;
     };
   }, []);
 
@@ -659,7 +686,7 @@ function MiniMap({ points, segmentGeometries, segmentTypes, lugares = [] }) {
 }
 
 // ── MapPicker ────────────────────────────────────────────────────────────────
-function MapPicker({ points, onChange, readonly = false, segmentGeometries = [], segmentTypes = [], onDeletePoint, lugares = [] }) {
+function MapPicker({ points, onChange, readonly = false, segmentGeometries = [], segmentTypes = [], onDeletePoint, lugares = [], placeType }) {
   const ref = useRef(null);
   const mapRef = useRef(null);
   const layersRef = useRef([]);
@@ -687,8 +714,11 @@ function MapPicker({ points, onChange, readonly = false, segmentGeometries = [],
 
   useEffect(() => {
     if (!mapRef.current || !window.L) return;
-    renderMapLayers(window.L, mapRef.current, points, segmentGeometries, segmentTypes, layersRef, readonly, onChange, ptRef, onDeletePoint, null);
-  }, [points, segmentGeometries, segmentTypes, readonly, onChange, onDeletePoint]);
+    const displayPoints = placeType && points.length === 1
+      ? [{ ...points[0], label: placeType }]
+      : points;
+    renderMapLayers(window.L, mapRef.current, displayPoints, segmentGeometries, segmentTypes, layersRef, readonly, onChange, ptRef, onDeletePoint, null);
+  }, [points, segmentGeometries, segmentTypes, readonly, onChange, onDeletePoint, placeType]);
 
   useEffect(() => {
     if (!mapRef.current || !window.L) return;
@@ -866,7 +896,7 @@ function PostCard({ post, currentUser, onLike, onComment, goProfile, goPostId, s
           </div>
         )}
       </div>
-      {hasMap && <MiniMap points={post.points} segmentGeometries={post.segmentGeometries} segmentTypes={post.segments?.map((s) => s.roadType)} lugares={lugares} />}
+      {hasMap && <MiniMap points={post.points} segmentGeometries={post.segmentGeometries} segmentTypes={post.segments?.map((s) => s.roadType)} lugares={lugares} placeType={post.placeType} />}
     </div>
   );
 }
@@ -1188,7 +1218,9 @@ export default function App() {
         title: np.title,
         description: np.desc,
         tags: np.tags,
-        points: np.points,
+        points: np.type === "lugar" && np.points.length === 1
+          ? [{ ...np.points[0], label: np.placeType || "Lugar" }]
+          : np.points,
         segments: np.segments,
         segment_geometries: np.segmentGeometries,
         segment_km: np.segmentKm,
@@ -1565,7 +1597,7 @@ export default function App() {
               )}
 
               <div style={{ marginTop: 12 }}>
-                <MapPicker points={post.points} onChange={() => {}} readonly segmentGeometries={post.segmentGeometries} segmentTypes={post.segments?.map((s) => s.roadType)} lugares={allLugares} />
+                <MapPicker points={post.points} onChange={() => {}} readonly segmentGeometries={post.segmentGeometries} segmentTypes={post.segments?.map((s) => s.roadType)} lugares={allLugares} placeType={post.placeType} />
               </div>
 
               {post.points?.length > 0 && (
