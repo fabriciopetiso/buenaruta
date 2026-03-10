@@ -1,7 +1,7 @@
 {
   "name": "BuenaRuta",
   "short_name": "BuenaRuta",
-  "description": "Compartí rutas de moto reales para salir a rodar",
+  "description": "Rutas de moto para salir a rodar",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0f172a",
