@@ -936,6 +936,15 @@ export default function App() {
 
   // ─── Auth effect ───────────────────────────────────────────────────────────
   useEffect(() => {
+    let authResolved = false;
+
+    const resolve = () => {
+      if (!authResolved) {
+        authResolved = true;
+        setAuthLoading(false);
+      }
+    };
+
     const loadUserData = async (userId, email) => {
       try {
         const profile = await fetchProfile(userId);
@@ -949,25 +958,35 @@ export default function App() {
       }
     };
 
+    // Timeout de seguridad: si en 5s no llega ningún evento, desbloqueamos
+    const timeout = setTimeout(() => {
+      console.warn("Auth timeout - desbloqueando app");
+      resolve();
+    }, 5000);
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      clearTimeout(timeout);
       if (event === 'INITIAL_SESSION') {
         if (session?.user) {
           await loadUserData(session.user.id, session.user.email);
         }
-        setAuthLoading(false);
+        resolve();
       } else if (event === 'SIGNED_IN') {
         if (session?.user) {
           await loadUserData(session.user.id, session.user.email);
         }
-        setAuthLoading(false);
+        resolve();
       } else if (event === 'SIGNED_OUT') {
         setCurrentUser(null);
         setSavedRoutes([]);
-        setAuthLoading(false);
+        resolve();
       }
     });
 
-    return () => subscription?.unsubscribe();
+    return () => {
+      clearTimeout(timeout);
+      subscription?.unsubscribe();
+    };
   }, []);
 
   // ─── Load routes ───────────────────────────────────────────────────────────
