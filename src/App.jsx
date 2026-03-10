@@ -241,6 +241,13 @@ function useOnScreen(ref, rootMargin = "400px") {
   const [visible, setVisible] = useState(false);
   useEffect(() => {
     if (!ref.current || visible) return;
+    // Chequeo inmediato: si ya está en el viewport al montarse, no esperamos al Observer
+    const rect = ref.current.getBoundingClientRect();
+    if (rect.top < window.innerHeight && rect.bottom > 0 && rect.left < window.innerWidth && rect.right > 0) {
+      setVisible(true);
+      return;
+    }
+    // Si no está visible todavía, Observer lo detecta cuando entre
     const obs = new IntersectionObserver(([entry]) => {
       if (entry.isIntersecting) { setVisible(true); obs.disconnect(); }
     }, { rootMargin });
