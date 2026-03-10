@@ -637,21 +637,18 @@ const renderMapLayers = (L, map, points, segmentGeometries, segmentTypes, layers
 
 // ── MiniMap ──────────────────────────────────────────────────────────────────
 function MiniMap({ points, segmentGeometries, segmentTypes, lugares = [], placeType }) {
-  const wrapperRef = useRef(null);
-  const visible = useOnScreen(wrapperRef);
   const ref = useRef(null);
   const mapRef = useRef(null);
   const layersRef = useRef([]);
   const lugaresLayerRef = useRef([]);
-  const initializedRef = useRef(false);
   const [mapReady, setMapReady] = useState(false);
 
-  // Efecto 1: init del mapa
+  // Efecto 1: init inmediato al montar, sin lazy loading
   useEffect(() => {
-    if (!visible || initializedRef.current) return;
-    initializedRef.current = true;
+    if (!ref.current || mapRef.current) return;
+    let mounted = true;
     loadLeaflet().then((L) => {
-      if (!ref.current || mapRef.current) return;
+      if (!mounted || !ref.current || mapRef.current) return;
       const center = points.length ? [points[0].lat, points[0].lng] : [-31.4, -64.18];
       const map = L.map(ref.current, {
         zoomControl: false, dragging: false, scrollWheelZoom: false,
@@ -659,20 +656,19 @@ function MiniMap({ points, segmentGeometries, segmentTypes, lugares = [], placeT
       }).setView(center, 9);
       L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "", maxZoom: 19 }).addTo(map);
       mapRef.current = map;
-      setMapReady(true);
+      if (mounted) setMapReady(true);
     }).catch(console.error);
-  }, [visible]); // eslint-disable-line react-hooks/exhaustive-deps
+    return () => { mounted = false; };
+  }, []); // Solo al montar
 
-  // Efecto 2: re-renderizar puntos (corre cuando mapa está listo O cuando puntos cambian)
+  // Efecto 2: renderizar puntos cuando mapa listo o puntos cambian
   useEffect(() => {
     if (!mapReady || !mapRef.current || !window.L) return;
     const dp = placeType && points.length === 1 ? [{ ...points[0], label: placeType }] : points;
     renderMapLayers(window.L, mapRef.current, dp, segmentGeometries, segmentTypes, layersRef, true, null, null, null, null);
-    // invalidateSize aquí: después de renderizar capas, forzar recálculo de dimensiones
-    mapRef.current.invalidateSize();
   }, [mapReady, points, segmentGeometries, segmentTypes, placeType]);
 
-  // Efecto 3: capa de lugares, separada para no tocar el mapa base
+  // Efecto 3: capa de lugares
   useEffect(() => {
     if (!mapReady || !mapRef.current || !window.L) return;
     const L = window.L;
@@ -689,22 +685,20 @@ function MiniMap({ points, segmentGeometries, segmentTypes, lugares = [], placeT
         .addTo(mapRef.current);
       lugaresLayerRef.current.push(m);
     });
-  }, [lugares]);
+  }, [mapReady, lugares]);
 
-  // Cleanup al desmontar
+  // Cleanup
   useEffect(() => {
     return () => {
       layersRef.current.forEach((l) => l.remove?.());
       lugaresLayerRef.current.forEach((l) => l.remove?.());
       if (mapRef.current) { mapRef.current.remove(); mapRef.current = null; }
-      initializedRef.current = false;
-      setMapReady(false);
     };
   }, []);
 
   return (
-    <div ref={wrapperRef} style={{ minHeight: 160 }}>
-      <div ref={ref} style={{ width: "100%", height: 160, borderRadius: "0 0 10px 10px", overflow: "hidden", marginTop: 10, border: "1px solid #334155", background: "#0f172a" }} />
+    <div style={{ width: "100%", height: 160, borderRadius: "0 0 10px 10px", overflow: "hidden", marginTop: 10, border: "1px solid #334155", background: "#0f172a" }}>
+      <div ref={ref} style={{ width: "100%", height: "100%" }} />
     </div>
   );
 }
