@@ -1,14 +1,11 @@
-const CACHE_NAME = 'buenaruta-v1';
+const CACHE_NAME = 'buenaruta-v2';
 const STATIC_ASSETS = [
-  '/',
-  '/index.html',
-  '/manifest.json',
   '/icon-192.png',
   '/icon-512.png',
   '/buena-ruta.mp3'
 ];
 
-// Install - cache static assets
+// Install - cache only static assets (not HTML/JS)
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
@@ -30,30 +27,23 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// Fetch - network first, fallback to cache
+// Fetch - network first, cache only for static assets
 self.addEventListener('fetch', (event) => {
-  // Skip non-GET requests
   if (event.request.method !== 'GET') return;
   
-  // Skip external requests (OSRM, Nominatim, tiles)
   const url = new URL(event.request.url);
   if (url.origin !== self.location.origin) return;
-
-  event.respondWith(
-    fetch(event.request)
-      .then((response) => {
-        // Cache successful responses
-        if (response.ok) {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, clone);
-          });
-        }
-        return response;
+  
+  // Static assets: cache first
+  if (STATIC_ASSETS.some(asset => url.pathname === asset)) {
+    event.respondWith(
+      caches.match(event.request).then((cached) => {
+        return cached || fetch(event.request);
       })
-      .catch(() => {
-        // Fallback to cache
-        return caches.match(event.request);
-      })
-  );
+    );
+    return;
+  }
+  
+  // Everything else: network only (no caching HTML/JS)
+  event.respondWith(fetch(event.request));
 });
