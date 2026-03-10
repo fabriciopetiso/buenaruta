@@ -959,14 +959,21 @@ export default function App() {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (session?.user) {
-        const profile = await fetchProfile(session.user.id);
-        setCurrentUser({ id: session.user.id, email: session.user.email, ...profile });
-        const saved = await fetchSavedRoutes(session.user.id);
-        setSavedRoutes(saved);
+        try {
+          const profile = await fetchProfile(session.user.id);
+          setCurrentUser({ id: session.user.id, email: session.user.email, ...profile });
+          const saved = await fetchSavedRoutes(session.user.id);
+          setSavedRoutes(saved || []);
+        } catch (err) {
+          console.error("Auth state change error:", err);
+          setCurrentUser({ id: session.user.id, email: session.user.email });
+          setSavedRoutes([]);
+        }
       } else {
         setCurrentUser(null);
         setSavedRoutes([]);
       }
+      setAuthLoading(false);
     });
 
     return () => subscription?.unsubscribe();
