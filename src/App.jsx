@@ -1211,7 +1211,7 @@ export default function App() {
       {/* Header */}
       <div style={{ background: "#1e293b", padding: "8px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 100, borderBottom: "1px solid #334155" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <img src="/icon-192.png" alt="BuenaRuta" style={{ height: 48, cursor: "pointer" }} onClick={() => { setView("feed"); setNavStack([]); }} />
+          <img src="/icon-192.png" alt="BuenaRuta" style={{ height: 96, cursor: "pointer" }} onClick={() => { setView("feed"); setNavStack([]); }} />
           <button onClick={playAudio} style={{ ...btn2, padding: "4px 8px", fontSize: 16 }} title="Escuchar intro">🎵</button>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
