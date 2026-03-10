@@ -936,15 +936,6 @@ export default function App() {
 
   // ─── Auth effect ───────────────────────────────────────────────────────────
   useEffect(() => {
-    let authResolved = false;
-
-    const resolve = () => {
-      if (!authResolved) {
-        authResolved = true;
-        setAuthLoading(false);
-      }
-    };
-
     const loadUserData = async (userId, email) => {
       try {
         const profile = await fetchProfile(userId);
@@ -958,41 +949,25 @@ export default function App() {
       }
     };
 
-    // Timeout de seguridad: si en 5s no llega ningún evento, desbloqueamos
-    const timeout = setTimeout(() => {
-      console.warn("Auth timeout - desbloqueando app");
-      resolve();
-    }, 5000);
-
-    console.log("A: antes de onAuthStateChange");
-
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log("B: evento recibido", event, !!session?.user);
-      clearTimeout(timeout);
       if (event === 'INITIAL_SESSION') {
         if (session?.user) {
           await loadUserData(session.user.id, session.user.email);
         }
-        console.log("C: antes de resolve (INITIAL_SESSION)");
-        resolve();
+        setAuthLoading(false);
       } else if (event === 'SIGNED_IN') {
         if (session?.user) {
           await loadUserData(session.user.id, session.user.email);
         }
-        console.log("C: antes de resolve (SIGNED_IN)");
-        resolve();
+        setAuthLoading(false);
       } else if (event === 'SIGNED_OUT') {
         setCurrentUser(null);
         setSavedRoutes([]);
-        console.log("C: antes de resolve (SIGNED_OUT)");
-        resolve();
+        setAuthLoading(false);
       }
     });
 
-    return () => {
-      clearTimeout(timeout);
-      subscription?.unsubscribe();
-    };
+    return () => subscription?.unsubscribe();
   }, []);
 
   // ─── Load routes ───────────────────────────────────────────────────────────
