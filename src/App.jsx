@@ -644,9 +644,12 @@ function MiniMap({ points, segmentGeometries, segmentTypes, lugares = [], placeT
 
   // Efecto 1: init del mapa UNA SOLA VEZ cuando se hace visible
   useEffect(() => {
+    console.log('[MiniMap] Efecto1 corre, visible=', visible, 'initialized=', initializedRef.current);
     if (!visible || initializedRef.current) return;
-    initializedRef.current = true; // marcar inmediatamente para evitar doble ejecución
+    initializedRef.current = true;
+    console.log('[MiniMap] Llamando loadLeaflet...');
     loadLeaflet().then((L) => {
+      console.log('[MiniMap] Leaflet cargado, ref.current=', !!ref.current, 'mapRef=', !!mapRef.current);
       if (!ref.current || mapRef.current) return;
       const center = points.length ? [points[0].lat, points[0].lng] : [-31.4, -64.18];
       const map = L.map(ref.current, {
@@ -655,9 +658,14 @@ function MiniMap({ points, segmentGeometries, segmentTypes, lugares = [], placeT
       }).setView(center, 9);
       L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "", maxZoom: 19 }).addTo(map);
       mapRef.current = map;
+      console.log('[MiniMap] Mapa creado, llamando setMapReady(true)');
       setMapReady(true);
-    }).catch(console.error);
+    }).catch(e => console.error('[MiniMap] Error:', e));
   }, [visible]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    console.log('[MiniMap] visible cambió a:', visible, '| wrapperRef rect:', wrapperRef.current?.getBoundingClientRect());
+  }, [visible]);
 
   // Efecto 2: re-renderizar puntos (corre cuando mapa está listo O cuando puntos cambian)
   useEffect(() => {
