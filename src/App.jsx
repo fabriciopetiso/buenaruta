@@ -636,7 +636,13 @@ function MiniMap({ points, segmentGeometries, segmentTypes, lugares = [], placeT
       L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "", maxZoom: 19 }).addTo(map);
       mapRef.current = map;
       initializedRef.current = true;
-      setMapReady(true); // dispara re-render para que Efecto 2 pueda correr
+      // Forzar recálculo de tamaño — sin esto Leaflet no renderiza bien cuando el contenedor no era visible
+      setTimeout(() => {
+        if (!cancelled && mapRef.current) {
+          mapRef.current.invalidateSize();
+          setMapReady(true);
+        }
+      }, 50);
     }).catch(console.error);
     return () => { cancelled = true; };
   }, [visible]); // eslint-disable-line react-hooks/exhaustive-deps
