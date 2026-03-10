@@ -620,6 +620,7 @@ function MiniMap({ points, segmentGeometries, segmentTypes, lugares = [], placeT
   const layersRef = useRef([]);
   const lugaresLayerRef = useRef([]);
   const initializedRef = useRef(false);
+  const [mapReady, setMapReady] = useState(false);
 
   // Efecto 1: init del mapa UNA SOLA VEZ cuando se hace visible
   useEffect(() => {
@@ -635,23 +636,21 @@ function MiniMap({ points, segmentGeometries, segmentTypes, lugares = [], placeT
       L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "", maxZoom: 19 }).addTo(map);
       mapRef.current = map;
       initializedRef.current = true;
-      // Capas inmediatamente al crear
-      const dp = placeType && points.length === 1 ? [{ ...points[0], label: placeType }] : points;
-      renderMapLayers(L, map, dp, segmentGeometries, segmentTypes, layersRef, true, null, null, null, null);
+      setMapReady(true); // dispara re-render para que Efecto 2 pueda correr
     }).catch(console.error);
     return () => { cancelled = true; };
   }, [visible]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Efecto 2: re-renderizar puntos si cambian (sin re-crear el mapa)
+  // Efecto 2: re-renderizar puntos (corre cuando mapa está listo O cuando puntos cambian)
   useEffect(() => {
-    if (!initializedRef.current || !mapRef.current || !window.L) return;
+    if (!mapReady || !mapRef.current || !window.L) return;
     const dp = placeType && points.length === 1 ? [{ ...points[0], label: placeType }] : points;
     renderMapLayers(window.L, mapRef.current, dp, segmentGeometries, segmentTypes, layersRef, true, null, null, null, null);
-  }, [points, segmentGeometries, segmentTypes, placeType]);
+  }, [mapReady, points, segmentGeometries, segmentTypes, placeType]);
 
   // Efecto 3: capa de lugares, separada para no tocar el mapa base
   useEffect(() => {
-    if (!initializedRef.current || !mapRef.current || !window.L) return;
+    if (!mapReady || !mapRef.current || !window.L) return;
     const L = window.L;
     lugaresLayerRef.current.forEach(l => l.remove?.());
     lugaresLayerRef.current = [];
@@ -984,6 +983,9 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(true);
   const [routes, setRoutes] = useState([]);
   const [savedRoutes, setSavedRoutes] = useState([]);
+
+  // Precargar Leaflet inmediatamente para que los mapas no esperen
+  useEffect(() => { loadLeaflet().catch(console.error); }, []);
 
   const [view, setView] = useState("feed");
   const [navStack, setNavStack] = useState([]);
