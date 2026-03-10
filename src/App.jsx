@@ -936,19 +936,26 @@ export default function App() {
 
   // ─── Auth effect ───────────────────────────────────────────────────────────
   useEffect(() => {
+    let initialLoad = true;
+    
+    const loadUserData = async (userId, email) => {
+      try {
+        const profile = await fetchProfile(userId);
+        setCurrentUser({ id: userId, email, ...profile });
+        const saved = await fetchSavedRoutes(userId);
+        setSavedRoutes(saved || []);
+      } catch (err) {
+        console.error("Error loading user data:", err);
+        setCurrentUser({ id: userId, email });
+        setSavedRoutes([]);
+      }
+    };
+
     const init = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user) {
-          try {
-            const profile = await fetchProfile(session.user.id);
-            setCurrentUser({ id: session.user.id, email: session.user.email, ...profile });
-            const saved = await fetchSavedRoutes(session.user.id);
-            setSavedRoutes(saved);
-          } catch (profileErr) {
-            console.error("Error loading profile:", profileErr);
-            setCurrentUser({ id: session.user.id, email: session.user.email });
-          }
+          await loadUserData(session.user.id, session.user.email);
         }
       } catch (err) {
         console.error("Auth init error:", err);
@@ -958,22 +965,15 @@ export default function App() {
     init();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (session?.user) {
-        try {
-          const profile = await fetchProfile(session.user.id);
-          setCurrentUser({ id: session.user.id, email: session.user.email, ...profile });
-          const saved = await fetchSavedRoutes(session.user.id);
-          setSavedRoutes(saved || []);
-        } catch (err) {
-          console.error("Auth state change error:", err);
-          setCurrentUser({ id: session.user.id, email: session.user.email });
-          setSavedRoutes([]);
-        }
-      } else {
+      // Ignorar el evento inicial INITIAL_SESSION para evitar doble fetch
+      if (event === 'INITIAL_SESSION') return;
+      
+      if (event === 'SIGNED_IN' && session?.user) {
+        await loadUserData(session.user.id, session.user.email);
+      } else if (event === 'SIGNED_OUT') {
         setCurrentUser(null);
         setSavedRoutes([]);
       }
-      setAuthLoading(false);
     });
 
     return () => subscription?.unsubscribe();
