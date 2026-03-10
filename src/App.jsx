@@ -240,11 +240,18 @@ const transformRoute = (r) => {
 function useOnScreen(ref, rootMargin = "400px") {
   const [visible, setVisible] = useState(false);
   useEffect(() => {
-    if (!ref.current || visible) return;
+    if (visible) return;
+    const el = ref.current;
+    if (!el) return;
+    // Chequeo inmediato: si el elemento ya está en el viewport, marcar visible ahora
+    const rect = el.getBoundingClientRect();
+    const inViewport = rect.top < window.innerHeight + 400 && rect.bottom > -400;
+    if (inViewport) { setVisible(true); return; }
+    // Si no, usar IntersectionObserver para detectar cuando entra
     const obs = new IntersectionObserver(([entry]) => {
       if (entry.isIntersecting) { setVisible(true); obs.disconnect(); }
     }, { rootMargin });
-    obs.observe(ref.current);
+    obs.observe(el);
     return () => obs.disconnect();
   }, [ref, rootMargin, visible]);
   return visible;
