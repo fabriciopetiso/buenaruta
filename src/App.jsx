@@ -645,9 +645,9 @@ function MiniMap({ points, segmentGeometries, segmentTypes, lugares = [], placeT
   // Efecto 1: init del mapa UNA SOLA VEZ cuando se hace visible
   useEffect(() => {
     if (!visible || initializedRef.current) return;
-    let cancelled = false;
+    initializedRef.current = true; // marcar inmediatamente para evitar doble ejecución
     loadLeaflet().then((L) => {
-      if (cancelled || !ref.current || mapRef.current) return;
+      if (!ref.current || mapRef.current) return;
       const center = points.length ? [points[0].lat, points[0].lng] : [-31.4, -64.18];
       const map = L.map(ref.current, {
         zoomControl: false, dragging: false, scrollWheelZoom: false,
@@ -655,10 +655,8 @@ function MiniMap({ points, segmentGeometries, segmentTypes, lugares = [], placeT
       }).setView(center, 9);
       L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "", maxZoom: 19 }).addTo(map);
       mapRef.current = map;
-      initializedRef.current = true;
       setMapReady(true);
     }).catch(console.error);
-    return () => { cancelled = true; };
   }, [visible]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Efecto 2: re-renderizar puntos (corre cuando mapa está listo O cuando puntos cambian)
