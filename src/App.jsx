@@ -626,26 +626,22 @@ function MiniMap({ points, segmentGeometries, segmentTypes, lugares = [], placeT
   useEffect(() => {
     if (!visible || initializedRef.current) return;
     let cancelled = false;
-    loadLeaflet().then((L) => {
-      if (cancelled || !ref.current || mapRef.current) return;
-      const center = points.length ? [points[0].lat, points[0].lng] : [-31.4, -64.18];
-      const map = L.map(ref.current, {
-        zoomControl: false, dragging: false, scrollWheelZoom: false,
-        doubleClickZoom: false, touchZoom: false, boxZoom: false, keyboard: false,
-      }).setView(center, 9);
-      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "", maxZoom: 19 }).addTo(map);
-      mapRef.current = map;
-      initializedRef.current = true;
-      // Hack nuclear: reflow forzado — replica exactamente lo que hace el browser al cambiar de pestaña
-      if (ref.current) {
-        ref.current.style.display = "none";
-        void ref.current.offsetHeight; // fuerza reflow del DOM
-        ref.current.style.display = "";
-      }
-      map.invalidateSize();
-      setMapReady(true);
-    }).catch(console.error);
-    return () => { cancelled = true; };
+    // requestAnimationFrame garantiza que el DOM terminó de pintar antes de que Leaflet mida el contenedor
+    const raf = requestAnimationFrame(() => {
+      loadLeaflet().then((L) => {
+        if (cancelled || !ref.current || mapRef.current) return;
+        const center = points.length ? [points[0].lat, points[0].lng] : [-31.4, -64.18];
+        const map = L.map(ref.current, {
+          zoomControl: false, dragging: false, scrollWheelZoom: false,
+          doubleClickZoom: false, touchZoom: false, boxZoom: false, keyboard: false,
+        }).setView(center, 9);
+        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "", maxZoom: 19 }).addTo(map);
+        mapRef.current = map;
+        initializedRef.current = true;
+        setMapReady(true);
+      }).catch(console.error);
+    });
+    return () => { cancelled = true; cancelAnimationFrame(raf); };
   }, [visible]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Efecto 2: re-renderizar puntos (corre cuando mapa está listo O cuando puntos cambian)
@@ -681,6 +677,7 @@ function MiniMap({ points, segmentGeometries, segmentTypes, lugares = [], placeT
       lugaresLayerRef.current.forEach((l) => l.remove?.());
       if (mapRef.current) { mapRef.current.remove(); mapRef.current = null; }
       initializedRef.current = false;
+      setMapReady(false);
     };
   }, []);
 
