@@ -306,7 +306,7 @@ function RouteSummary({ totalKm, provinces, segments, segmentKm }) {
 }
 
 // ── SavedRoutesPanel ─────────────────────────────────────────────────────────
-function SavedRoutesPanel({ savedRoutes, routes, currentUser, onOpenPost, onStartNavigation, onToggleSaved, onMarkCompleted }) {
+function SavedRoutesPanel({ savedRoutes, routes, currentUser, onOpenPost, onStartNavigation, onToggleSaved, onMarkCompleted, onOpenNavigatorModal }) {
   if (!currentUser || savedRoutes.length === 0) return null;
 
   return (
@@ -327,7 +327,7 @@ function SavedRoutesPanel({ savedRoutes, routes, currentUser, onOpenPost, onStar
               </div>
             </div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <button onClick={() => { playAudio(); onStartNavigation(saved, post); }} disabled={!isNavigableRoute(post)} style={{ ...btn, padding: "8px 12px", opacity: isNavigableRoute(post) ? 1 : 0.5 }}>🚀 Navegar</button>
+              <button onClick={() => { playAudio(); onOpenNavigatorModal(post.id); }} disabled={!isNavigableRoute(post)} style={{ ...btn, padding: "8px 12px", opacity: isNavigableRoute(post) ? 1 : 0.5 }}>🚀 Navegar</button>
               <button onClick={() => onOpenPost(post.id)} style={{ ...btn2, padding: "8px 12px" }}>Ver detalle</button>
               <button onClick={() => onToggleSaved(post.id)} style={{ ...btn2, padding: "8px 12px" }}>Quitar</button>
               {saved.status !== "completed" && <button onClick={() => onMarkCompleted(saved)} style={{ ...btn2, padding: "8px 12px" }}>✅ Marcar hecha</button>}
@@ -744,7 +744,7 @@ function PostCard({ post, currentUser, onLike, onComment, goProfile, goPostId, s
   const liked = !!(currentUser && post.likes?.includes(currentUser.id));
   const [showC, setShowC] = useState(false);
   const [cText, setCText] = useState("");
-  const hasMap = isRouteType(post.type) && post.points?.length > 0;
+  const hasMap = post.points?.length > 0 && (isRouteType(post.type) || post.type === "lugar" || post.type === "evento");
   const saved = currentUser && savedRoutes?.some((r) => r.route_id === post.id);
 
   const submitComment = () => {
@@ -1195,7 +1195,7 @@ export default function App() {
   const navigatorPost = navigatorPostId ? routes.find((p) => p.id === navigatorPostId) : null;
   const draftIsRoute = isRouteType(np.type);
   const routeComputed = np.segmentGeometries.length > 0;
-  const canPublish = !!np.title.trim() && np.points.length > 0 && !(np.type === "lugar" && !np.placeType) && !(np.type === "evento" && !np.eventDate) && !(draftIsRoute && np.points.length >= 2 && !routeComputed);
+  const canPublish = !!np.title.trim() && np.points.length > 0 && !(np.type === "lugar" && !np.placeType) && !(np.type === "lugar" && np.points.length !== 1) && !(np.type === "evento" && !np.eventDate) && !(draftIsRoute && np.points.length >= 2 && !routeComputed);
   const inNav = !["auth", "new", "post", "profile"].includes(view);
 
   if (authLoading) {
@@ -1282,7 +1282,7 @@ export default function App() {
           <div>
             {/* Saved Routes Panel */}
             <SavedRoutesPanel savedRoutes={savedRoutes} routes={routes} currentUser={currentUser}
-              onOpenPost={goPostId} onStartNavigation={startNavigation} onToggleSaved={handleToggleSaved} onMarkCompleted={handleMarkCompleted} />
+              onOpenPost={goPostId} onStartNavigation={startNavigation} onToggleSaved={handleToggleSaved} onMarkCompleted={handleMarkCompleted} onOpenNavigatorModal={setNavigatorPostId} />
 
             {/* Quick Filters */}
             <div style={{ background: "#1e293b", borderRadius: 14, padding: 12, marginBottom: 16, border: "1px solid #334155" }}>
@@ -1431,9 +1431,25 @@ export default function App() {
 
             {npStep === 2 && (
               <>
-                <LocationSearch onSelect={(lat, lng) => updatePoints(normalizePoints([...np.points, { lat, lng }]))} />
-                <p style={{ color: "#64748b", fontSize: 12, marginBottom: 6 }}>Tocá el mapa para agregar puntos · Clic derecho para eliminar</p>
-                <MapPicker points={np.points} onChange={updatePoints} readonly={false} segmentGeometries={np.segmentGeometries} segmentTypes={np.segments.map((s) => s.roadType)} />
+                <LocationSearch onSelect={(lat, lng) => {
+                  if (np.type === "lugar") {
+                    updatePoints(normalizePoints([{ lat, lng }]));
+                  } else {
+                    updatePoints(normalizePoints([...np.points, { lat, lng }]));
+                  }
+                }} />
+                <p style={{ color: "#64748b", fontSize: 12, marginBottom: 6 }}>
+                  {np.type === "lugar"
+                    ? "Tocá el mapa para marcar la ubicación exacta (1 solo punto)"
+                    : "Tocá el mapa para agregar puntos · Clic derecho para eliminar"}
+                </p>
+                <MapPicker points={np.points} onChange={(pts) => {
+                  if (np.type === "lugar" && pts.length > 1) {
+                    updatePoints([pts[pts.length - 1]]);
+                  } else {
+                    updatePoints(pts);
+                  }
+                }} readonly={false} segmentGeometries={np.segmentGeometries} segmentTypes={np.segments.map((s) => s.roadType)} />
 
                 {draftIsRoute && <SegmentEditor points={np.points} segments={np.segments} onChange={(segs) => setNp((prev) => resetRouteDerived({ ...prev, segments: segs }))} />}
 
@@ -1488,7 +1504,7 @@ export default function App() {
                 <div>
                   <span style={{ color: "#f8fafc", fontWeight: 700, cursor: "pointer" }} onClick={() => goProfile(post.userId)}>@{post.author?.username}</span>
                   {post.author?.moto && <p style={{ color: "#f59e0b", fontSize: 12, margin: "2px 0 0" }}>🏍️ {post.author.moto.modelo} · {post.author.moto.cilindrada}cc · {post.author.moto.anio}</p>}
-                  <div style={{ color: meta.color, fontSize: 13, marginTop: 2 }}>{meta.icon} {meta.label}</div>
+                  <div style={{ color: meta.color, fontSize: 13, marginTop: 2 }}>{meta.icon} {meta.label}{post.placeType ? ` · ${post.placeType}` : ""}{post.eventDate ? ` · 📅 ${post.eventDate}` : ""}</div>
                 </div>
               </div>
 
@@ -1511,6 +1527,27 @@ export default function App() {
               <div style={{ marginTop: 12 }}>
                 <MapPicker points={post.points} onChange={() => {}} readonly segmentGeometries={post.segmentGeometries} segmentTypes={post.segments?.map((s) => s.roadType)} />
               </div>
+
+              {post.points?.length > 0 && (
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 }}>
+                  {post.points.map((p, i) => (
+                    <span key={i} style={{ background: "#0f172a", color: "#94a3b8", borderRadius: 99, padding: "4px 12px", fontSize: 12 }}>
+                      {i === 0 ? "🟢" : i === post.points.length - 1 && post.points.length > 1 ? "🔴" : "🟡"} {p.label}
+                      {post.segmentKm?.[i] !== undefined && i < post.points.length - 1 ? ` · ${Math.round(post.segmentKm[i])}km →` : ""}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {post.segments?.length > 0 && (
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+                  {post.segments.map((s, i) => (
+                    <span key={i} style={{ color: "#64748b", fontSize: 12 }}>
+                      Tramo {i + 1}: <RoadTypeBadge value={s.roadType} />
+                    </span>
+                  ))}
+                </div>
+              )}
 
               <div style={{ marginTop: 16 }}>
                 <h4 style={{ color: "#64748b", fontWeight: 600, marginBottom: 10 }}>💬 Comentarios ({post.comments?.length || 0})</h4>
