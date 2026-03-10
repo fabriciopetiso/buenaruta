@@ -949,21 +949,22 @@ export default function App() {
       }
     };
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'INITIAL_SESSION') {
-        if (session?.user) {
-          await loadUserData(session.user.id, session.user.email);
-        }
+    // Paso 1: verificar sesión existente al arrancar
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        loadUserData(session.user.id, session.user.email).finally(() => setAuthLoading(false));
+      } else {
         setAuthLoading(false);
-      } else if (event === 'SIGNED_IN') {
-        if (session?.user) {
-          await loadUserData(session.user.id, session.user.email);
-        }
-        setAuthLoading(false);
+      }
+    }).catch(() => setAuthLoading(false));
+
+    // Paso 2: escuchar cambios POSTERIORES (login, logout, token refresh)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_IN' && session?.user) {
+        loadUserData(session.user.id, session.user.email);
       } else if (event === 'SIGNED_OUT') {
         setCurrentUser(null);
         setSavedRoutes([]);
-        setAuthLoading(false);
       }
     });
 
