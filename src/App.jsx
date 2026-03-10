@@ -936,8 +936,6 @@ export default function App() {
 
   // ─── Auth effect ───────────────────────────────────────────────────────────
   useEffect(() => {
-    let initialLoad = true;
-    
     const loadUserData = async (userId, email) => {
       try {
         const profile = await fetchProfile(userId);
@@ -951,30 +949,21 @@ export default function App() {
       }
     };
 
-    const init = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user) {
-          // DIAGNÓSTICO: bypass loadUserData para aislar el bug
-          setCurrentUser({ id: session.user.id, email: session.user.email });
-          setSavedRoutes([]);
-        }
-      } catch (err) {
-        console.error("Auth init error:", err);
-      }
-      setAuthLoading(false);
-    };
-    init();
-
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      // Ignorar el evento inicial INITIAL_SESSION para evitar doble fetch
-      if (event === 'INITIAL_SESSION') return;
-      
-      if (event === 'SIGNED_IN' && session?.user) {
-        await loadUserData(session.user.id, session.user.email);
+      if (event === 'INITIAL_SESSION') {
+        if (session?.user) {
+          await loadUserData(session.user.id, session.user.email);
+        }
+        setAuthLoading(false);
+      } else if (event === 'SIGNED_IN') {
+        if (session?.user) {
+          await loadUserData(session.user.id, session.user.email);
+        }
+        setAuthLoading(false);
       } else if (event === 'SIGNED_OUT') {
         setCurrentUser(null);
         setSavedRoutes([]);
+        setAuthLoading(false);
       }
     });
 
