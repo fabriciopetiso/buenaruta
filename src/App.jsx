@@ -551,7 +551,7 @@ function ActiveNavigation({ post, onClose, onComplete }) {
 }
 
 // ── Map shared renderer ──────────────────────────────────────────────────────
-const renderMapLayers = (L, map, points, segmentGeometries, segmentTypes, layersRef, readonly, onChange, ptRef, onDeletePoint) => {
+const renderMapLayers = (L, map, points, segmentGeometries, segmentTypes, layersRef, readonly, onChange, ptRef, onDeletePoint, onClickMarker) => {
   layersRef.current.forEach((l) => l.remove());
   layersRef.current = [];
 
@@ -566,6 +566,10 @@ const renderMapLayers = (L, map, points, segmentGeometries, segmentTypes, layers
     const m = L.marker([p.lat, p.lng], { icon, draggable: !readonly, keyboard: true })
       .bindTooltip(p.label, { permanent: true, direction: "top", offset: [0, -10] })
       .addTo(map);
+
+    if (onClickMarker) {
+      m.on("click", () => onClickMarker(p, i));
+    }
 
     if (!readonly && onChange && ptRef) {
       m.on("dragend", (e) => {
@@ -595,39 +599,54 @@ const renderMapLayers = (L, map, points, segmentGeometries, segmentTypes, layers
   if (points.length > 1) {
     map.fitBounds(L.latLngBounds(points.map((p) => [p.lat, p.lng])), { padding: [30, 30] });
   } else if (points.length === 1) {
-    map.setView([points[0].lat, points[0].lng], 12);
+    map.setView([points[0].lat, points[0].lng], 14);
   }
 };
 
 // ── MiniMap ──────────────────────────────────────────────────────────────────
-function MiniMap({ points, segmentGeometries, segmentTypes }) {
+function MiniMap({ points, segmentGeometries, segmentTypes, lugares = [] }) {
   const wrapperRef = useRef(null);
   const visible = useOnScreen(wrapperRef);
   const ref = useRef(null);
   const mapRef = useRef(null);
   const layersRef = useRef([]);
+  const lugaresLayerRef = useRef([]);
 
   useEffect(() => {
     if (!visible) return;
     let cancelled = false;
     loadLeaflet().then((L) => {
-      if (cancelled || !ref.current || mapRef.current) return;
-      const center = points.length ? [points[0].lat, points[0].lng] : [-31.4, -64.18];
-      const map = L.map(ref.current, { zoomControl: false, dragging: false, scrollWheelZoom: false, doubleClickZoom: false, touchZoom: false, boxZoom: false, keyboard: false }).setView(center, 9);
-      mapRef.current = map;
-      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "", maxZoom: 19 }).addTo(map);
+      if (cancelled || !ref.current) return;
+      if (!mapRef.current) {
+        const center = points.length ? [points[0].lat, points[0].lng] : [-31.4, -64.18];
+        const map = L.map(ref.current, { zoomControl: false, dragging: false, scrollWheelZoom: false, doubleClickZoom: false, touchZoom: false, boxZoom: false, keyboard: false }).setView(center, 9);
+        mapRef.current = map;
+        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "", maxZoom: 19 }).addTo(map);
+      }
+      // Renderizar capas inmediatamente después de crear el mapa
+      renderMapLayers(L, mapRef.current, points, segmentGeometries, segmentTypes, layersRef, true, null, null, null, null);
+      // Renderizar lugares como capa permanente
+      lugaresLayerRef.current.forEach(l => l.remove?.());
+      lugaresLayerRef.current = [];
+      lugares.forEach((lugar) => {
+        if (!lugar.points?.[0]) return;
+        const icon = L.divIcon({
+          html: `<div style="background:#10b981;width:8px;height:8px;border-radius:50%;border:2px solid #fff;box-shadow:0 1px 4px #0009"></div>`,
+          iconSize: [8, 8], iconAnchor: [4, 4], className: "",
+        });
+        const m = L.marker([lugar.points[0].lat, lugar.points[0].lng], { icon })
+          .bindPopup(`<b>${lugar.title}</b><br/>${lugar.placeType || ""}`)
+          .addTo(mapRef.current);
+        lugaresLayerRef.current.push(m);
+      });
     }).catch(console.error);
     return () => { cancelled = true; };
-  }, [visible, points]);
-
-  useEffect(() => {
-    if (!visible || !mapRef.current || !window.L) return;
-    renderMapLayers(window.L, mapRef.current, points, segmentGeometries, segmentTypes, layersRef, true, null, null, null);
-  }, [visible, points, segmentGeometries, segmentTypes]);
+  }, [visible, points, segmentGeometries, segmentTypes, lugares]);
 
   useEffect(() => {
     return () => {
       layersRef.current.forEach((l) => l.remove?.());
+      lugaresLayerRef.current.forEach((l) => l.remove?.());
       if (mapRef.current) { mapRef.current.remove(); mapRef.current = null; }
     };
   }, []);
@@ -640,10 +659,11 @@ function MiniMap({ points, segmentGeometries, segmentTypes }) {
 }
 
 // ── MapPicker ────────────────────────────────────────────────────────────────
-function MapPicker({ points, onChange, readonly = false, segmentGeometries = [], segmentTypes = [], onDeletePoint }) {
+function MapPicker({ points, onChange, readonly = false, segmentGeometries = [], segmentTypes = [], onDeletePoint, lugares = [] }) {
   const ref = useRef(null);
   const mapRef = useRef(null);
   const layersRef = useRef([]);
+  const lugaresLayerRef = useRef([]);
   const ptRef = useRef(points);
   ptRef.current = points;
 
@@ -663,16 +683,35 @@ function MapPicker({ points, onChange, readonly = false, segmentGeometries = [],
       }
     }).catch(console.error);
     return () => { cancelled = true; };
-  }, [readonly, onChange, points]);
+  }, [readonly, onChange]);
 
   useEffect(() => {
     if (!mapRef.current || !window.L) return;
-    renderMapLayers(window.L, mapRef.current, points, segmentGeometries, segmentTypes, layersRef, readonly, onChange, ptRef, onDeletePoint);
+    renderMapLayers(window.L, mapRef.current, points, segmentGeometries, segmentTypes, layersRef, readonly, onChange, ptRef, onDeletePoint, null);
   }, [points, segmentGeometries, segmentTypes, readonly, onChange, onDeletePoint]);
+
+  useEffect(() => {
+    if (!mapRef.current || !window.L) return;
+    const L = window.L;
+    lugaresLayerRef.current.forEach(l => l.remove?.());
+    lugaresLayerRef.current = [];
+    lugares.forEach((lugar) => {
+      if (!lugar.points?.[0]) return;
+      const icon = L.divIcon({
+        html: `<div style="background:#10b981;width:10px;height:10px;border-radius:50%;border:2px solid #fff;box-shadow:0 1px 4px #0009"></div>`,
+        iconSize: [10, 10], iconAnchor: [5, 5], className: "",
+      });
+      const m = L.marker([lugar.points[0].lat, lugar.points[0].lng], { icon })
+        .bindPopup(`<b>${lugar.title}</b><br/><span style="color:#64748b">${lugar.placeType || ""}</span>`)
+        .addTo(mapRef.current);
+      lugaresLayerRef.current.push(m);
+    });
+  }, [lugares]);
 
   useEffect(() => {
     return () => {
       layersRef.current.forEach((l) => l.remove?.());
+      lugaresLayerRef.current.forEach((l) => l.remove?.());
       if (mapRef.current) { mapRef.current.remove(); mapRef.current = null; }
     };
   }, []);
@@ -739,7 +778,7 @@ function SegmentEditor({ points, segments, onChange }) {
 }
 
 // ── PostCard ─────────────────────────────────────────────────────────────────
-function PostCard({ post, currentUser, onLike, onComment, goProfile, goPostId, savedRoutes, onToggleSaved, onOpenNavigatorModal }) {
+function PostCard({ post, currentUser, onLike, onComment, goProfile, goPostId, savedRoutes, onToggleSaved, onOpenNavigatorModal, lugares = [] }) {
   const meta = TYPE_META[post.type];
   const liked = !!(currentUser && post.likes?.includes(currentUser.id));
   const [showC, setShowC] = useState(false);
@@ -827,7 +866,7 @@ function PostCard({ post, currentUser, onLike, onComment, goProfile, goPostId, s
           </div>
         )}
       </div>
-      {hasMap && <MiniMap points={post.points} segmentGeometries={post.segmentGeometries} segmentTypes={post.segments?.map((s) => s.roadType)} />}
+      {hasMap && <MiniMap points={post.points} segmentGeometries={post.segmentGeometries} segmentTypes={post.segments?.map((s) => s.roadType)} lugares={lugares} />}
     </div>
   );
 }
@@ -1191,6 +1230,7 @@ export default function App() {
 
   const allTags = useMemo(() => [...new Set(routes.flatMap((p) => p.tags || []))], [routes]);
   const allProvinces = useMemo(() => [...new Set(routes.flatMap((p) => p.provinces || []).filter(Boolean))].sort(), [routes]);
+  const allLugares = useMemo(() => routes.filter((p) => p.type === "lugar" && p.points?.length > 0), [routes]);
 
   const navigatorPost = navigatorPostId ? routes.find((p) => p.id === navigatorPostId) : null;
   const draftIsRoute = isRouteType(np.type);
@@ -1316,7 +1356,7 @@ export default function App() {
             {filteredRoutes.length === 0 && <p style={{ color: "#64748b", textAlign: "center", marginTop: 30 }}>Sin resultados.</p>}
             {filteredRoutes.map((p) => (
               <PostCard key={p.id} post={p} currentUser={currentUser} onLike={handleLike} onComment={handleComment}
-                goProfile={goProfile} goPostId={goPostId} savedRoutes={savedRoutes} onToggleSaved={handleToggleSaved} onOpenNavigatorModal={setNavigatorPostId} />
+                goProfile={goProfile} goPostId={goPostId} savedRoutes={savedRoutes} onToggleSaved={handleToggleSaved} onOpenNavigatorModal={setNavigatorPostId} lugares={allLugares} />
             ))}
           </div>
         )}
@@ -1363,7 +1403,7 @@ export default function App() {
             {filteredRoutes.length === 0 && <p style={{ color: "#64748b", textAlign: "center", marginTop: 30 }}>Sin resultados.</p>}
             {filteredRoutes.map((p) => (
               <PostCard key={p.id} post={p} currentUser={currentUser} onLike={handleLike} onComment={handleComment}
-                goProfile={goProfile} goPostId={goPostId} savedRoutes={savedRoutes} onToggleSaved={handleToggleSaved} onOpenNavigatorModal={setNavigatorPostId} />
+                goProfile={goProfile} goPostId={goPostId} savedRoutes={savedRoutes} onToggleSaved={handleToggleSaved} onOpenNavigatorModal={setNavigatorPostId} lugares={allLugares} />
             ))}
           </div>
         )}
@@ -1525,7 +1565,7 @@ export default function App() {
               )}
 
               <div style={{ marginTop: 12 }}>
-                <MapPicker points={post.points} onChange={() => {}} readonly segmentGeometries={post.segmentGeometries} segmentTypes={post.segments?.map((s) => s.roadType)} />
+                <MapPicker points={post.points} onChange={() => {}} readonly segmentGeometries={post.segmentGeometries} segmentTypes={post.segments?.map((s) => s.roadType)} lugares={allLugares} />
               </div>
 
               {post.points?.length > 0 && (
