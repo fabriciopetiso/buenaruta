@@ -237,24 +237,37 @@ const transformRoute = (r) => {
 };
 
 // ── Hooks ────────────────────────────────────────────────────────────────────
-function useOnScreen(ref, rootMargin = "400px") {
-  const [visible, setVisible] = useState(false);
+function useOnScreen(ref) {
+  const [isIntersecting, setIntersecting] = useState(false);
+
   useEffect(() => {
-    if (!ref.current || visible) return;
-    // Chequeo inmediato: si ya está en el viewport al montarse, no esperamos al Observer
-    const rect = ref.current.getBoundingClientRect();
-    if (rect.top < window.innerHeight && rect.bottom > 0 && rect.left < window.innerWidth && rect.right > 0) {
-      setVisible(true);
-      return;
+    const element = ref.current;
+    if (!element) return;
+
+    // Verificar inmediatamente si ya está visible (antes de que el observer corra)
+    const rect = element.getBoundingClientRect();
+    const windowHeight = window.innerHeight || document.documentElement.clientHeight;
+    const windowWidth = window.innerWidth || document.documentElement.clientWidth;
+
+    const verticallyVisible = rect.top < windowHeight && rect.bottom > 0;
+    const horizontallyVisible = rect.left < windowWidth && rect.right > 0;
+
+    if (verticallyVisible && horizontallyVisible) {
+      setIntersecting(true);
     }
-    // Si no está visible todavía, Observer lo detecta cuando entre
-    const obs = new IntersectionObserver(([entry]) => {
-      if (entry.isIntersecting) { setVisible(true); obs.disconnect(); }
-    }, { rootMargin });
-    obs.observe(ref.current);
-    return () => obs.disconnect();
-  }, [ref, rootMargin, visible]);
-  return visible;
+
+    // Observer para cambios futuros
+    const observer = new IntersectionObserver(
+      ([entry]) => { setIntersecting(entry.isIntersecting); },
+      { threshold: 0.1 }
+    );
+
+    observer.observe(element);
+
+    return () => observer.disconnect();
+  }, [ref]);
+
+  return isIntersecting;
 }
 
 function useDebouncedValue(value, delay = 250) {
