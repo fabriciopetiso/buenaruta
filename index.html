@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <meta name="theme-color" content="#0f172a" />
     <meta name="description" content="BuenaRuta - Compartí rutas de moto reales para salir a rodar" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="BuenaRuta" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
@@ -16,30 +16,15 @@
   <body>
     <div id="root"></div>
     <script>
-      // FORZAR limpieza de SW y cache viejo - versión 3
-      (async function() {
-        if (localStorage.getItem('br_sw_v3_clean') !== '1') {
-          // Desregistrar TODOS los service workers
-          if ('serviceWorker' in navigator) {
-            const regs = await navigator.serviceWorker.getRegistrations();
-            await Promise.all(regs.map(r => r.unregister()));
-          }
-          // Borrar TODOS los caches
-          if ('caches' in window) {
-            const keys = await caches.keys();
-            await Promise.all(keys.map(k => caches.delete(k)));
-          }
-          localStorage.setItem('br_sw_v3_clean', '1');
-          location.reload();
-          return;
-        }
-        // Registrar SW nuevo
-        if ('serviceWorker' in navigator) {
-          navigator.serviceWorker.register('/sw.js')
-            .then(reg => console.log('SW v3 registered'))
-            .catch(err => console.log('SW failed:', err));
-        }
-      })();
+      // Limpiar SW viejo y NO registrar nuevo
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(regs => {
+          regs.forEach(r => r.unregister());
+        });
+      }
+      if ('caches' in window) {
+        caches.keys().then(keys => keys.forEach(k => caches.delete(k)));
+      }
     </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
