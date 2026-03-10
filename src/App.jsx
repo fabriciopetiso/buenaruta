@@ -964,21 +964,27 @@ export default function App() {
       resolve();
     }, 5000);
 
+    console.log("A: antes de onAuthStateChange");
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log("B: evento recibido", event, !!session?.user);
       clearTimeout(timeout);
       if (event === 'INITIAL_SESSION') {
         if (session?.user) {
           await loadUserData(session.user.id, session.user.email);
         }
+        console.log("C: antes de resolve (INITIAL_SESSION)");
         resolve();
       } else if (event === 'SIGNED_IN') {
         if (session?.user) {
           await loadUserData(session.user.id, session.user.email);
         }
+        console.log("C: antes de resolve (SIGNED_IN)");
         resolve();
       } else if (event === 'SIGNED_OUT') {
         setCurrentUser(null);
         setSavedRoutes([]);
+        console.log("C: antes de resolve (SIGNED_OUT)");
         resolve();
       }
     });
