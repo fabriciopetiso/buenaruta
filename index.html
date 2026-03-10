@@ -12,20 +12,34 @@
     <link rel="apple-touch-icon" href="/icon-192.png" />
     <link rel="manifest" href="/manifest.json" />
     <title>BuenaRuta 🏍️</title>
+    
+    <!-- LIMPIEZA AGRESIVA DE SW - DEBE IR PRIMERO -->
+    <script>
+      (function() {
+        if (sessionStorage.getItem('sw_cleaned')) {
+          sessionStorage.removeItem('sw_cleaned');
+          return;
+        }
+        
+        if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.getRegistrations().then(function(regs) {
+            if (regs.length > 0) {
+              Promise.all(regs.map(function(r) { return r.unregister(); })).then(function() {
+                return caches.keys().then(function(names) {
+                  return Promise.all(names.map(function(n) { return caches.delete(n); }));
+                });
+              }).then(function() {
+                sessionStorage.setItem('sw_cleaned', 'true');
+                window.location.reload(true);
+              });
+            }
+          });
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
-    <script>
-      // Limpiar SW viejo y NO registrar nuevo
-      if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.getRegistrations().then(regs => {
-          regs.forEach(r => r.unregister());
-        });
-      }
-      if ('caches' in window) {
-        caches.keys().then(keys => keys.forEach(k => caches.delete(k)));
-      }
-    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

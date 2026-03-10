@@ -1,6 +1,8 @@
-// SW desactivado - se auto-desregistra
-self.addEventListener('install', () => self.skipWaiting());
-self.addEventListener('activate', () => {
+// SW desactivado - solo existe para auto-desregistrarse
+self.addEventListener('install', function() {
+  self.skipWaiting();
+});
+
+self.addEventListener('activate', function() {
   self.registration.unregister();
-  self.clients.matchAll().then(clients => clients.forEach(c => c.navigate(c.url)));
 });
