@@ -639,50 +639,47 @@ const renderMapLayers = (L, map, points, segmentGeometries, segmentTypes, layers
 function MiniMap({ points, segmentGeometries, segmentTypes, lugares = [], placeType }) {
   const ref = useRef(null);
   const mapRef = useRef(null);
-  const leafletRef = useRef(null);
   const layersRef = useRef([]);
   const lugaresLayerRef = useRef([]);
-  const [mapReady, setMapReady] = useState(false);
 
-  // Efecto único: init + render todo junto dentro del mismo .then()
-  // cuando points/segmentGeometries cambian y el mapa ya existe, re-renderizar
+  const initMap = (L) => {
+    if (!ref.current || mapRef.current) return;
+    const center = points.length ? [points[0].lat, points[0].lng] : [-31.4, -64.18];
+    const map = L.map(ref.current, {
+      zoomControl: false, dragging: false, scrollWheelZoom: false,
+      doubleClickZoom: false, touchZoom: false, boxZoom: false, keyboard: false,
+    }).setView(center, 9);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "", maxZoom: 19 }).addTo(map);
+    mapRef.current = map;
+    const dp = placeType && points.length === 1 ? [{ ...points[0], label: placeType }] : points;
+    renderMapLayers(L, map, dp, segmentGeometries, segmentTypes, layersRef, true, null, null, null, null);
+  };
+
   useEffect(() => {
-    if (!ref.current) return;
-    if (mapRef.current && leafletRef.current) {
-      // mapa ya existe, solo actualizar capas
-      const dp = placeType && points.length === 1 ? [{ ...points[0], label: placeType }] : points;
-      renderMapLayers(leafletRef.current, mapRef.current, dp, segmentGeometries, segmentTypes, layersRef, true, null, null, null, null);
-      return;
+    // Si Leaflet ya está cargado, inicializar sincrónicamente
+    if (window.L) {
+      initMap(window.L);
+    } else {
+      loadLeaflet().then(initMap).catch(console.error);
     }
-    let mounted = true;
-    loadLeaflet().then((L) => {
-      if (!mounted || !ref.current) return;
-      if (mapRef.current) {
-        // ya fue creado en otro render
-        const dp = placeType && points.length === 1 ? [{ ...points[0], label: placeType }] : points;
-        renderMapLayers(L, mapRef.current, dp, segmentGeometries, segmentTypes, layersRef, true, null, null, null, null);
-        return;
-      }
-      const center = points.length ? [points[0].lat, points[0].lng] : [-31.4, -64.18];
-      const map = L.map(ref.current, {
-        zoomControl: false, dragging: false, scrollWheelZoom: false,
-        doubleClickZoom: false, touchZoom: false, boxZoom: false, keyboard: false,
-      }).setView(center, 9);
-      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "", maxZoom: 19 }).addTo(map);
-      mapRef.current = map;
-      leafletRef.current = L;
-      // renderizar capas inmediatamente, sin esperar re-render
-      const dp = placeType && points.length === 1 ? [{ ...points[0], label: placeType }] : points;
-      renderMapLayers(L, map, dp, segmentGeometries, segmentTypes, layersRef, true, null, null, null, null);
-      if (mounted) setMapReady(true);
-    }).catch(console.error);
-    return () => { mounted = false; };
+    return () => {
+      layersRef.current.forEach((l) => l.remove?.());
+      lugaresLayerRef.current.forEach((l) => l.remove?.());
+      if (mapRef.current) { mapRef.current.remove(); mapRef.current = null; }
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Actualizar capas cuando points cambian
+  useEffect(() => {
+    if (!mapRef.current || !window.L) return;
+    const dp = placeType && points.length === 1 ? [{ ...points[0], label: placeType }] : points;
+    renderMapLayers(window.L, mapRef.current, dp, segmentGeometries, segmentTypes, layersRef, true, null, null, null, null);
   }, [points, segmentGeometries, segmentTypes, placeType]);
 
-  // Efecto capa de lugares
+  // Capa de lugares
   useEffect(() => {
-    if (!mapRef.current || !leafletRef.current) return;
-    const L = leafletRef.current;
+    if (!mapRef.current || !window.L) return;
+    const L = window.L;
     lugaresLayerRef.current.forEach(l => l.remove?.());
     lugaresLayerRef.current = [];
     lugares.forEach((lugar) => {
@@ -696,17 +693,7 @@ function MiniMap({ points, segmentGeometries, segmentTypes, lugares = [], placeT
         .addTo(mapRef.current);
       lugaresLayerRef.current.push(m);
     });
-  }, [mapReady, lugares]);
-
-  // Cleanup
-  useEffect(() => {
-    return () => {
-      layersRef.current.forEach((l) => l.remove?.());
-      lugaresLayerRef.current.forEach((l) => l.remove?.());
-      if (mapRef.current) { mapRef.current.remove(); mapRef.current = null; }
-      leafletRef.current = null;
-    };
-  }, []);
+  }, [lugares]);
 
   return (
     <div style={{ width: "100%", height: 160, borderRadius: "0 0 10px 10px", overflow: "hidden", marginTop: 10, border: "1px solid #334155", background: "#0f172a" }}>
