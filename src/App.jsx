@@ -702,7 +702,7 @@ function MiniMap({ points, segmentGeometries, segmentTypes, lugares = [], placeT
   }, []);
 
   return (
-    <div ref={wrapperRef}>
+    <div ref={wrapperRef} style={{ minHeight: 160 }}>
       <div ref={ref} style={{ width: "100%", height: 160, borderRadius: "0 0 10px 10px", overflow: "hidden", marginTop: 10, border: "1px solid #334155", background: "#0f172a" }} />
     </div>
   );
