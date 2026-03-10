@@ -955,7 +955,9 @@ export default function App() {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user) {
-          await loadUserData(session.user.id, session.user.email);
+          // DIAGNÓSTICO: bypass loadUserData para aislar el bug
+          setCurrentUser({ id: session.user.id, email: session.user.email });
+          setSavedRoutes([]);
         }
       } catch (err) {
         console.error("Auth init error:", err);
