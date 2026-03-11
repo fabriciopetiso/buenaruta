@@ -647,12 +647,16 @@ function MiniMap({ points, segmentGeometries, segmentTypes, lugares = [], placeT
     let mounted = true;
 
     const initAndRender = async () => {
-      // Esperar a que el browser pinte el layout y el contenedor tenga dimensiones reales
       await new Promise(resolve => setTimeout(resolve, 50));
       if (!mounted || !ref.current) return;
 
+      const rect = ref.current.getBoundingClientRect();
+      console.log('[MiniMap] container rect:', rect.width, rect.height, 'points:', points.length);
+
       const L = await loadLeaflet();
       if (!mounted || !ref.current) return;
+
+      console.log('[MiniMap] Leaflet loaded, window.L:', !!window.L);
 
       // Crear mapa si no existe
       if (!mapRef.current) {
@@ -663,10 +667,12 @@ function MiniMap({ points, segmentGeometries, segmentTypes, lugares = [], placeT
         }).setView(center, 9);
         L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "", maxZoom: 19 }).addTo(map);
         mapRef.current = map;
+        console.log('[MiniMap] mapa creado');
       }
 
       // Renderizar puntos de la ruta
       const dp = placeType && points.length === 1 ? [{ ...points[0], label: placeType }] : points;
+      console.log('[MiniMap] renderizando', dp.length, 'puntos');
       renderMapLayers(L, mapRef.current, dp, segmentGeometries, segmentTypes, layersRef, true, null, null, null, null);
 
       // Renderizar lugares
