@@ -674,6 +674,9 @@ function MiniMap({ points, segmentGeometries, segmentTypes, lugares = [], placeT
       const dp = placeType && points.length === 1 ? [{ ...points[0], label: placeType }] : points;
       console.log('[MiniMap] renderizando', dp.length, 'puntos');
       renderMapLayers(L, mapRef.current, dp, segmentGeometries, segmentTypes, layersRef, true, null, null, null, null);
+      mapRef.current.invalidateSize();
+      // Forzar recálculo de dimensiones del mapa DESPUÉS de renderizar
+      mapRef.current.invalidateSize();
 
       // Renderizar lugares
       lugaresLayerRef.current.forEach(l => l.remove?.());
@@ -705,8 +708,8 @@ function MiniMap({ points, segmentGeometries, segmentTypes, lugares = [], placeT
   }, []);
 
   return (
-    <div style={{ width: "100%", height: 160, borderRadius: "0 0 10px 10px", overflow: "hidden", marginTop: 10, border: "1px solid #334155", background: "#0f172a" }}>
-      <div ref={ref} style={{ width: "100%", height: "100%" }} />
+    <div style={{ width: "100%", height: 160, borderRadius: "0 0 10px 10px", marginTop: 10, border: "1px solid #334155", background: "#0f172a", position: "relative" }}>
+      <div ref={ref} style={{ width: "100%", height: "100%", borderRadius: "0 0 10px 10px", overflow: "hidden" }} />
     </div>
   );
 }
