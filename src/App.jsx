@@ -642,58 +642,61 @@ function MiniMap({ points, segmentGeometries, segmentTypes, lugares = [], placeT
   const layersRef = useRef([]);
   const lugaresLayerRef = useRef([]);
 
-  const initMap = (L) => {
-    if (!ref.current || mapRef.current) return;
-    const center = points.length ? [points[0].lat, points[0].lng] : [-31.4, -64.18];
-    const map = L.map(ref.current, {
-      zoomControl: false, dragging: false, scrollWheelZoom: false,
-      doubleClickZoom: false, touchZoom: false, boxZoom: false, keyboard: false,
-    }).setView(center, 9);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "", maxZoom: 19 }).addTo(map);
-    mapRef.current = map;
-    const dp = placeType && points.length === 1 ? [{ ...points[0], label: placeType }] : points;
-    renderMapLayers(L, map, dp, segmentGeometries, segmentTypes, layersRef, true, null, null, null, null);
-  };
-
   useEffect(() => {
-    // Si Leaflet ya está cargado, inicializar sincrónicamente
-    if (window.L) {
-      initMap(window.L);
-    } else {
-      loadLeaflet().then(initMap).catch(console.error);
-    }
+    if (!ref.current) return;
+    let mounted = true;
+
+    const initAndRender = async () => {
+      // Esperar a que el browser pinte el layout y el contenedor tenga dimensiones reales
+      await new Promise(resolve => setTimeout(resolve, 50));
+      if (!mounted || !ref.current) return;
+
+      const L = await loadLeaflet();
+      if (!mounted || !ref.current) return;
+
+      // Crear mapa si no existe
+      if (!mapRef.current) {
+        const center = points.length ? [points[0].lat, points[0].lng] : [-31.4, -64.18];
+        const map = L.map(ref.current, {
+          zoomControl: false, dragging: false, scrollWheelZoom: false,
+          doubleClickZoom: false, touchZoom: false, boxZoom: false, keyboard: false,
+        }).setView(center, 9);
+        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "", maxZoom: 19 }).addTo(map);
+        mapRef.current = map;
+      }
+
+      // Renderizar puntos de la ruta
+      const dp = placeType && points.length === 1 ? [{ ...points[0], label: placeType }] : points;
+      renderMapLayers(L, mapRef.current, dp, segmentGeometries, segmentTypes, layersRef, true, null, null, null, null);
+
+      // Renderizar lugares
+      lugaresLayerRef.current.forEach(l => l.remove?.());
+      lugaresLayerRef.current = [];
+      lugares.forEach((lugar) => {
+        if (!lugar.points?.[0]) return;
+        const icon = L.divIcon({
+          html: `<div style="background:#10b981;width:8px;height:8px;border-radius:50%;border:2px solid #fff;box-shadow:0 1px 4px #0009"></div>`,
+          iconSize: [8, 8], iconAnchor: [4, 4], className: "",
+        });
+        const m = L.marker([lugar.points[0].lat, lugar.points[0].lng], { icon })
+          .bindPopup(`<b>${lugar.title}</b><br/><i style="color:#94a3b8">${lugar.placeType || ""}</i>`)
+          .addTo(mapRef.current);
+        lugaresLayerRef.current.push(m);
+      });
+    };
+
+    initAndRender().catch(console.error);
+    return () => { mounted = false; };
+  }, [points, segmentGeometries, segmentTypes, placeType, lugares]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Cleanup al desmontar
+  useEffect(() => {
     return () => {
       layersRef.current.forEach((l) => l.remove?.());
       lugaresLayerRef.current.forEach((l) => l.remove?.());
       if (mapRef.current) { mapRef.current.remove(); mapRef.current = null; }
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Actualizar capas cuando points cambian
-  useEffect(() => {
-    if (!mapRef.current || !window.L) return;
-    const dp = placeType && points.length === 1 ? [{ ...points[0], label: placeType }] : points;
-    renderMapLayers(window.L, mapRef.current, dp, segmentGeometries, segmentTypes, layersRef, true, null, null, null, null);
-  }, [points, segmentGeometries, segmentTypes, placeType]);
-
-  // Capa de lugares
-  useEffect(() => {
-    if (!mapRef.current || !window.L) return;
-    const L = window.L;
-    lugaresLayerRef.current.forEach(l => l.remove?.());
-    lugaresLayerRef.current = [];
-    lugares.forEach((lugar) => {
-      if (!lugar.points?.[0]) return;
-      const icon = L.divIcon({
-        html: `<div style="background:#10b981;width:8px;height:8px;border-radius:50%;border:2px solid #fff;box-shadow:0 1px 4px #0009"></div>`,
-        iconSize: [8, 8], iconAnchor: [4, 4], className: "",
-      });
-      const m = L.marker([lugar.points[0].lat, lugar.points[0].lng], { icon })
-        .bindPopup(`<b>${lugar.title}</b><br/><i style="color:#94a3b8">${lugar.placeType || ""}</i>`)
-        .addTo(mapRef.current);
-      lugaresLayerRef.current.push(m);
-    });
-  }, [lugares]);
+  }, []);
 
   return (
     <div style={{ width: "100%", height: 160, borderRadius: "0 0 10px 10px", overflow: "hidden", marginTop: 10, border: "1px solid #334155", background: "#0f172a" }}>
