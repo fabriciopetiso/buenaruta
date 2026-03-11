@@ -244,31 +244,27 @@ function useOnScreen(ref) {
     const element = ref.current;
     if (!element) return;
 
-    const check = () => {
-      const rect = element.getBoundingClientRect();
-      const windowHeight = window.innerHeight || document.documentElement.clientHeight;
-      const windowWidth = window.innerWidth || document.documentElement.clientWidth;
-      if (rect.top < windowHeight && rect.bottom > 0 && rect.left < windowWidth && rect.right > 0 && rect.height > 0) {
-        setIntersecting(true);
-        return true;
-      }
-      return false;
-    };
+    // Verificar inmediatamente si ya está visible (antes de que el observer corra)
+    const rect = element.getBoundingClientRect();
+    const windowHeight = window.innerHeight || document.documentElement.clientHeight;
+    const windowWidth = window.innerWidth || document.documentElement.clientWidth;
 
-    // Chequeo inmediato
-    if (check()) return;
+    const verticallyVisible = rect.top < windowHeight && rect.bottom > 0;
+    const horizontallyVisible = rect.left < windowWidth && rect.right > 0;
 
-    // Si no está listo, usar ResizeObserver para detectar cuando el elemento tiene dimensiones
-    const ro = new ResizeObserver(() => { if (check()) ro.disconnect(); });
-    ro.observe(element);
+    if (verticallyVisible && horizontallyVisible) {
+      setIntersecting(true);
+    }
 
-    // También IntersectionObserver como fallback
-    const io = new IntersectionObserver(([entry]) => {
-      if (entry.isIntersecting) { setIntersecting(true); io.disconnect(); ro.disconnect(); }
-    }, { threshold: 0 });
-    io.observe(element);
+    // Observer para cambios futuros
+    const observer = new IntersectionObserver(
+      ([entry]) => { setIntersecting(entry.isIntersecting); },
+      { threshold: 0.1 }
+    );
 
-    return () => { ro.disconnect(); io.disconnect(); };
+    observer.observe(element);
+
+    return () => observer.disconnect();
   }, [ref]);
 
   return isIntersecting;
@@ -637,66 +633,59 @@ const renderMapLayers = (L, map, points, segmentGeometries, segmentTypes, layers
 
 // ── MiniMap ──────────────────────────────────────────────────────────────────
 function MiniMap({ points, segmentGeometries, segmentTypes, lugares = [], placeType }) {
+  const wrapperRef = useRef(null);
+  const visible = useOnScreen(wrapperRef);
   const ref = useRef(null);
   const mapRef = useRef(null);
   const layersRef = useRef([]);
   const lugaresLayerRef = useRef([]);
+  const initializedRef = useRef(false);
+  const [mapReady, setMapReady] = useState(false);
 
+  // Efecto 1: init del mapa UNA SOLA VEZ cuando se hace visible
   useEffect(() => {
-    if (!ref.current) return;
-    let mounted = true;
+    if (!visible || initializedRef.current) return;
+    let cancelled = false;
+    loadLeaflet().then((L) => {
+      if (cancelled || !ref.current || mapRef.current) return;
+      const center = points.length ? [points[0].lat, points[0].lng] : [-31.4, -64.18];
+      const map = L.map(ref.current, {
+        zoomControl: false, dragging: false, scrollWheelZoom: false,
+        doubleClickZoom: false, touchZoom: false, boxZoom: false, keyboard: false,
+      }).setView(center, 9);
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "", maxZoom: 19 }).addTo(map);
+      mapRef.current = map;
+      initializedRef.current = true;
+      setMapReady(true);
+    }).catch(console.error);
+    return () => { cancelled = true; };
+  }, [visible]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    const initAndRender = async () => {
-      await new Promise(resolve => setTimeout(resolve, 50));
-      if (!mounted || !ref.current) return;
+  // Efecto 2: re-renderizar puntos (corre cuando mapa está listo O cuando puntos cambian)
+  useEffect(() => {
+    if (!mapReady || !mapRef.current || !window.L) return;
+    const dp = placeType && points.length === 1 ? [{ ...points[0], label: placeType }] : points;
+    renderMapLayers(window.L, mapRef.current, dp, segmentGeometries, segmentTypes, layersRef, true, null, null, null, null);
+  }, [mapReady, points, segmentGeometries, segmentTypes, placeType]);
 
-      const rect = ref.current.getBoundingClientRect();
-      console.log('[MiniMap] container rect:', rect.width, rect.height, 'points:', points.length);
-
-      const L = await loadLeaflet();
-      if (!mounted || !ref.current) return;
-
-      console.log('[MiniMap] Leaflet loaded, window.L:', !!window.L);
-
-      // Crear mapa si no existe
-      if (!mapRef.current) {
-        const center = points.length ? [points[0].lat, points[0].lng] : [-31.4, -64.18];
-        const map = L.map(ref.current, {
-          zoomControl: false, dragging: false, scrollWheelZoom: false,
-          doubleClickZoom: false, touchZoom: false, boxZoom: false, keyboard: false,
-        }).setView(center, 9);
-        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "", maxZoom: 19 }).addTo(map);
-        mapRef.current = map;
-        console.log('[MiniMap] mapa creado');
-      }
-
-      // Renderizar puntos de la ruta
-      const dp = placeType && points.length === 1 ? [{ ...points[0], label: placeType }] : points;
-      console.log('[MiniMap] renderizando', dp.length, 'puntos');
-      renderMapLayers(L, mapRef.current, dp, segmentGeometries, segmentTypes, layersRef, true, null, null, null, null);
-      mapRef.current.invalidateSize();
-      // Forzar recálculo de dimensiones del mapa DESPUÉS de renderizar
-      mapRef.current.invalidateSize();
-
-      // Renderizar lugares
-      lugaresLayerRef.current.forEach(l => l.remove?.());
-      lugaresLayerRef.current = [];
-      lugares.forEach((lugar) => {
-        if (!lugar.points?.[0]) return;
-        const icon = L.divIcon({
-          html: `<div style="background:#10b981;width:8px;height:8px;border-radius:50%;border:2px solid #fff;box-shadow:0 1px 4px #0009"></div>`,
-          iconSize: [8, 8], iconAnchor: [4, 4], className: "",
-        });
-        const m = L.marker([lugar.points[0].lat, lugar.points[0].lng], { icon })
-          .bindPopup(`<b>${lugar.title}</b><br/><i style="color:#94a3b8">${lugar.placeType || ""}</i>`)
-          .addTo(mapRef.current);
-        lugaresLayerRef.current.push(m);
+  // Efecto 3: capa de lugares, separada para no tocar el mapa base
+  useEffect(() => {
+    if (!mapReady || !mapRef.current || !window.L) return;
+    const L = window.L;
+    lugaresLayerRef.current.forEach(l => l.remove?.());
+    lugaresLayerRef.current = [];
+    lugares.forEach((lugar) => {
+      if (!lugar.points?.[0]) return;
+      const icon = L.divIcon({
+        html: `<div style="background:#10b981;width:8px;height:8px;border-radius:50%;border:2px solid #fff;box-shadow:0 1px 4px #0009"></div>`,
+        iconSize: [8, 8], iconAnchor: [4, 4], className: "",
       });
-    };
-
-    initAndRender().catch(console.error);
-    return () => { mounted = false; };
-  }, [points, segmentGeometries, segmentTypes, placeType, lugares]); // eslint-disable-line react-hooks/exhaustive-deps
+      const m = L.marker([lugar.points[0].lat, lugar.points[0].lng], { icon })
+        .bindPopup(`<b>${lugar.title}</b><br/><i style="color:#94a3b8">${lugar.placeType || ""}</i>`)
+        .addTo(mapRef.current);
+      lugaresLayerRef.current.push(m);
+    });
+  }, [lugares]);
 
   // Cleanup al desmontar
   useEffect(() => {
@@ -704,50 +693,95 @@ function MiniMap({ points, segmentGeometries, segmentTypes, lugares = [], placeT
       layersRef.current.forEach((l) => l.remove?.());
       lugaresLayerRef.current.forEach((l) => l.remove?.());
       if (mapRef.current) { mapRef.current.remove(); mapRef.current = null; }
+      initializedRef.current = false;
+      setMapReady(false);
     };
   }, []);
 
   return (
-    <div style={{ width: "100%", height: 160, borderRadius: "0 0 10px 10px", marginTop: 10, border: "1px solid #334155", background: "#0f172a", position: "relative" }}>
-      <div ref={ref} style={{ width: "100%", height: "100%", borderRadius: "0 0 10px 10px", overflow: "hidden" }} />
+    <div ref={wrapperRef} style={{ minHeight: 160 }}>
+      <div ref={ref} style={{ width: "100%", height: 160, borderRadius: "0 0 10px 10px", overflow: "hidden", marginTop: 10, border: "1px solid #334155", background: "#0f172a" }} />
     </div>
   );
 }
 
 // ── MapPicker ────────────────────────────────────────────────────────────────
-function MapPicker({ points, onChange, readonly = false, segmentGeometries = [], segmentTypes = [], onDeletePoint, lugares = [], placeType }) {
+function MapPicker({ points, onChange, readonly = false, segmentGeometries = [], segmentTypes = [], lugares = [], placeType }) {
   const ref = useRef(null);
   const mapRef = useRef(null);
   const layersRef = useRef([]);
   const lugaresLayerRef = useRef([]);
   const ptRef = useRef(points);
   ptRef.current = points;
+  
+  // FIX: Flag para evitar re-inicialización
+  const initializedRef = useRef(false);
 
   useEffect(() => {
-    let cancelled = false;
-    loadLeaflet().then((L) => {
-      if (cancelled || !ref.current || mapRef.current) return;
-      const center = points.length ? [points[0].lat, points[0].lng] : [-31.4, -64.18];
-      const map = L.map(ref.current).setView(center, 9);
-      mapRef.current = map;
-      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: '© OSM', maxZoom: 19 }).addTo(map);
-      if (!readonly) {
-        map.on("click", (e) => {
-          const updated = normalizePoints([...ptRef.current, { lat: e.latlng.lat, lng: e.latlng.lng }]);
-          onChange(updated);
-        });
+    // FIX: Solo inicializar una vez
+    if (initializedRef.current || !ref.current || mapRef.current) return;
+    
+    let mounted = true;
+    
+    const initMap = async () => {
+      try {
+        const L = await loadLeaflet();
+        // FIX: Doble check después del await
+        if (!mounted || !ref.current || mapRef.current) return;
+        
+        const center = points.length ? [points[0].lat, points[0].lng] : [-31.4, -64.18];
+        const map = L.map(ref.current).setView(center, 9);
+        mapRef.current = map;
+        
+        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { 
+          attribution: '© OSM', 
+          maxZoom: 19 
+        }).addTo(map);
+        
+        if (!readonly) {
+          map.on("click", (e) => {
+            const updated = normalizePoints([...ptRef.current, { lat: e.latlng.lat, lng: e.latlng.lng }]);
+            onChange(updated);
+          });
+        }
+        
+        initializedRef.current = true;
+        
+        // FIX: Forzar invalidateSize después de crear
+        setTimeout(() => {
+          if (mapRef.current) {
+            mapRef.current.invalidateSize();
+          }
+        }, 100);
+        
+      } catch (err) {
+        console.error('Error initializing map:', err);
       }
-    }).catch(console.error);
-    return () => { cancelled = true; };
-  }, [readonly, onChange]);
+    };
+    
+    initMap();
+    
+    return () => { 
+      mounted = false;
+    };
+  }, []); // FIX: Solo al montar - sin dependencias problemáticas
 
+  // Efecto separado para actualizar capas cuando cambian los datos
   useEffect(() => {
     if (!mapRef.current || !window.L) return;
+    
     const displayPoints = placeType && points.length === 1
       ? [{ ...points[0], label: placeType }]
       : points;
-    renderMapLayers(window.L, mapRef.current, displayPoints, segmentGeometries, segmentTypes, layersRef, readonly, onChange, ptRef, onDeletePoint, null);
-  }, [points, segmentGeometries, segmentTypes, readonly, onChange, onDeletePoint, placeType]);
+      
+    renderMapLayers(window.L, mapRef.current, displayPoints, segmentGeometries, segmentTypes, layersRef, readonly, onChange, ptRef, null, null);
+    
+    // FIX: invalidateSize después de renderizar capas
+    setTimeout(() => {
+      mapRef.current?.invalidateSize();
+    }, 50);
+    
+  }, [points, segmentGeometries, segmentTypes, readonly, onChange, placeType]);
 
   useEffect(() => {
     if (!mapRef.current || !window.L) return;
@@ -772,6 +806,7 @@ function MapPicker({ points, onChange, readonly = false, segmentGeometries = [],
       layersRef.current.forEach((l) => l.remove?.());
       lugaresLayerRef.current.forEach((l) => l.remove?.());
       if (mapRef.current) { mapRef.current.remove(); mapRef.current = null; }
+      initializedRef.current = false;
     };
   }, []);
 
