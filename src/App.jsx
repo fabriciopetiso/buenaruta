@@ -716,6 +716,7 @@ function MapPicker({ points, onChange, readonly = false, segmentGeometries = [],
   
   // FIX: Flag para evitar re-inicialización
   const initializedRef = useRef(false);
+  const [mapReady, setMapReady] = useState(false);
 
   useEffect(() => {
     // FIX: Solo inicializar una vez
@@ -746,6 +747,7 @@ function MapPicker({ points, onChange, readonly = false, segmentGeometries = [],
         }
         
         initializedRef.current = true;
+        setMapReady(true);
         
         // FIX: Forzar invalidateSize después de crear
         setTimeout(() => {
@@ -768,7 +770,7 @@ function MapPicker({ points, onChange, readonly = false, segmentGeometries = [],
 
   // Efecto separado para actualizar capas cuando cambian los datos
   useEffect(() => {
-    if (!mapRef.current || !window.L) return;
+    if (!mapReady || !mapRef.current || !window.L) return;
     
     const displayPoints = placeType && points.length === 1
       ? [{ ...points[0], label: placeType }]
@@ -781,10 +783,10 @@ function MapPicker({ points, onChange, readonly = false, segmentGeometries = [],
       mapRef.current?.invalidateSize();
     }, 50);
     
-  }, [points, segmentGeometries, segmentTypes, readonly, onChange, placeType]);
+  }, [mapReady, points, segmentGeometries, segmentTypes, readonly, onChange, placeType]);
 
   useEffect(() => {
-    if (!mapRef.current || !window.L) return;
+    if (!mapReady || !mapRef.current || !window.L) return;
     const L = window.L;
     lugaresLayerRef.current.forEach(l => l.remove?.());
     lugaresLayerRef.current = [];
@@ -799,7 +801,7 @@ function MapPicker({ points, onChange, readonly = false, segmentGeometries = [],
         .addTo(mapRef.current);
       lugaresLayerRef.current.push(m);
     });
-  }, [lugares]);
+  }, [mapReady, lugares]);
 
   useEffect(() => {
     return () => {
@@ -807,6 +809,7 @@ function MapPicker({ points, onChange, readonly = false, segmentGeometries = [],
       lugaresLayerRef.current.forEach((l) => l.remove?.());
       if (mapRef.current) { mapRef.current.remove(); mapRef.current = null; }
       initializedRef.current = false;
+      setMapReady(false);
     };
   }, []);
 
