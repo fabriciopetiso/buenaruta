@@ -82,7 +82,7 @@ const TYPE_META = {
   evento: { label: "Evento", icon: "🎉", color: "#ef4444" },
 };
 
-const PLACE_TYPES = ["nafta", "mecánico", "mecánico de confianza", "camping", "comida", "mirador", "descanso", "otro"];
+const PLACE_TYPES = ["nafta", "mecánico", "mecánico de confianza", "camping", "comida", "mirador", "descanso", "parada", "otro"];
 
 const EMPTY_FILTERS = { type: "all", tag: "", text: "", province: "", minLikes: "", minKm: "", maxKm: "", sortBy: "likes" };
 
@@ -807,7 +807,7 @@ function MapPicker({ points, onChange, readonly = false, segmentGeometries = [],
       });
       const popupContent = () => {
         const div = L.DomUtil.create("div");
-        div.innerHTML = `<div style="font-size:13px;min-width:120px"><b style="color:#f1f5f9">${lugar.title}</b>${lugar.placeType ? `<br/><span style="color:#6ee7b7;font-size:11px">📍 ${lugar.placeType}</span>` : ""}</div>`;
+        div.innerHTML = `<div style="font-size:13px;min-width:130px"><b style="color:#f1f5f9">${lugar.title}</b>${lugar.placeType ? `<br/><span style="color:#6ee7b7;font-size:11px">📍 ${lugar.placeType}</span>` : ""}${lugar.desc ? `<br/><span style="color:#94a3b8;font-size:11px">${lugar.desc}</span>` : ""}</div>`;
         if (!readonlyRef.current) {
           const btn = L.DomUtil.create("button", "", div);
           btn.textContent = "➕ Agregar como parada";
@@ -1324,6 +1324,48 @@ export default function App() {
         place_type: np.type === "lugar" ? np.placeType : null,
         event_date: np.type === "evento" ? np.eventDate : null,
       });
+
+      // Si es una ruta/viaje, crear lugares tipo "parada" para cada punto
+      // Se evita duplicar si ya existe una parada a menos de ~30m
+      if (isRouteType(np.type) && np.points.length > 0) {
+        const existingParadas = routes.filter(
+          (r) => r.type === "lugar" && r.placeType === "parada" && r.points?.length > 0
+        );
+        const DEDUP_KM = 0.03; // 30 metros
+
+        const paradaPromises = np.points.map(async (pt, i) => {
+          const isDuplicate = existingParadas.some(
+            (p) => haversineKm(pt.lat, pt.lng, p.points[0].lat, p.points[0].lng) < DEDUP_KM
+          );
+          if (isDuplicate) return null;
+
+          const posLabel = i === 0 ? "Inicio" : i === np.points.length - 1 ? "Fin" : `Parada ${i}`;
+          return createRoute({
+            user_id: currentUser.id,
+            type: "lugar",
+            title: pt.label || posLabel,
+            description: `${posLabel} de la ruta "${np.title}"`,
+            tags: [],
+            points: [{ lat: pt.lat, lng: pt.lng, label: "parada" }],
+            segments: [],
+            segment_geometries: [],
+            segment_km: [],
+            total_km: 0,
+            provinces: np.provinces,
+            place_type: "parada",
+            event_date: null,
+          }).catch(() => null); // silenciar errores individuales
+        });
+
+        const createdParadas = (await Promise.all(paradaPromises)).filter(Boolean);
+        if (createdParadas.length > 0) {
+          const newLugares = createdParadas.map((r) =>
+            transformRoute({ ...r, profiles: currentUser, route_likes: [], route_comments: [] })
+          );
+          setRoutes(prev => [...newLugares, ...prev]);
+        }
+      }
+
       setRoutes(prev => [transformRoute({ ...newRoute, profiles: currentUser, route_likes: [], route_comments: [] }), ...prev]);
       setNp(EMPTY_NP);
       setNpStep(1);
