@@ -1014,7 +1014,7 @@ function ProfileView({ profileId, currentUser, routes, goBack, goPostId, handleL
           fetchFollowCounts(profileId),
         ]);
         setProfile(p);
-        setUserRoutes(r.map(transformRoute));
+        setUserRoutes(r.map(transformRoute).filter(p => p.placeType !== "parada"));
         setFollowCounts(counts);
         if (currentUser && currentUser.id !== profileId) {
           const following = await checkIsFollowing(currentUser.id, profileId);
@@ -1389,6 +1389,7 @@ export default function App() {
 
     return routes
       .filter((p) => {
+        if (p.placeType === "parada") return false; // paradas son overlay de mapa, no posts del feed
         if (filters.type !== "all" && p.type !== filters.type) return false;
         if (filters.tag && !p.tags?.some((t) => t.toLowerCase().includes(filters.tag.toLowerCase()))) return false;
         if (debouncedText && !p.title.toLowerCase().includes(debouncedText.toLowerCase()) && !p.desc?.toLowerCase().includes(debouncedText.toLowerCase())) return false;
