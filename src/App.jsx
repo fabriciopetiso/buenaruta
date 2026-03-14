@@ -969,7 +969,7 @@ function PostCard({ post, currentUser, onLike, onComment, goProfile, goPostId, s
 }
 
 // ── ProfileView ──────────────────────────────────────────────────────────────
-function ProfileView({ profileId, currentUser, routes, goBack, goPostId, handleLike, handleComment, savedRoutes, handleToggleSaved, setNavigatorPostId, handleLogout }) {
+function ProfileView({ profileId, currentUser, routes, goBack, goPostId, handleLike, handleComment, savedRoutes, handleToggleSaved, setNavigatorPostId, handleLogout, lugares = [] }) {
   const [profile, setProfile] = useState(null);
   const [userRoutes, setUserRoutes] = useState([]);
   const [followCounts, setFollowCounts] = useState({ followers: 0, following: 0 });
@@ -1039,7 +1039,7 @@ function ProfileView({ profileId, currentUser, routes, goBack, goPostId, handleL
       {userRoutes.length === 0 && <p style={{ color: "#64748b" }}>Sin publicaciones aún.</p>}
       {userRoutes.map((p) => (
         <PostCard key={p.id} post={p} currentUser={currentUser} onLike={handleLike} onComment={handleComment}
-          goProfile={() => {}} goPostId={goPostId} savedRoutes={savedRoutes} onToggleSaved={handleToggleSaved} onOpenNavigatorModal={setNavigatorPostId} />
+          goProfile={() => {}} goPostId={goPostId} savedRoutes={savedRoutes} onToggleSaved={handleToggleSaved} onOpenNavigatorModal={setNavigatorPostId} lugares={lugares} />
       ))}
     </div>
   );
@@ -1591,7 +1591,7 @@ export default function App() {
                   } else {
                     updatePoints(pts);
                   }
-                }} readonly={false} segmentGeometries={np.segmentGeometries} segmentTypes={np.segments.map((s) => s.roadType)} />
+                }} readonly={false} segmentGeometries={np.segmentGeometries} segmentTypes={np.segments.map((s) => s.roadType)} lugares={allLugares} placeType={np.placeType} />
 
                 {draftIsRoute && <SegmentEditor points={np.points} segments={np.segments} onChange={(segs) => setNp((prev) => resetRouteDerived({ ...prev, segments: segs }))} />}
 
@@ -1721,7 +1721,7 @@ export default function App() {
         {view === "profile" && activeProfileId && (
           <ProfileView profileId={activeProfileId} currentUser={currentUser} routes={routes}
             goBack={goBack} goPostId={goPostId} handleLike={handleLike} handleComment={handleComment}
-            savedRoutes={savedRoutes} handleToggleSaved={handleToggleSaved} setNavigatorPostId={setNavigatorPostId} handleLogout={handleLogout} />
+            savedRoutes={savedRoutes} handleToggleSaved={handleToggleSaved} setNavigatorPostId={setNavigatorPostId} handleLogout={handleLogout} lugares={allLugares} />
         )}
       </div>
 
