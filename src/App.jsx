@@ -677,18 +677,23 @@ function MiniMap({ points, segmentGeometries, segmentTypes, lugares = [], placeT
     const L = window.L;
     lugaresLayerRef.current.forEach(l => l.remove?.());
     lugaresLayerRef.current = [];
+    const DEDUP_KM = 0.05;
     lugares.forEach((lugar) => {
       if (!lugar.points?.[0]) return;
+      const { lat, lng } = lugar.points[0];
+      // No mostrar si coincide con un waypoint propio de la ruta
+      const isOwnPoint = points.some((p) => haversineKm(p.lat, p.lng, lat, lng) < DEDUP_KM);
+      if (isOwnPoint) return;
       const icon = L.divIcon({
         html: `<div style="background:#10b981;width:8px;height:8px;border-radius:50%;border:2px solid #fff;box-shadow:0 1px 4px #0009"></div>`,
         iconSize: [8, 8], iconAnchor: [4, 4], className: "",
       });
-      const m = L.marker([lugar.points[0].lat, lugar.points[0].lng], { icon })
+      const m = L.marker([lat, lng], { icon })
         .bindPopup(`<b>${lugar.title}</b><br/><i style="color:#94a3b8">${lugar.placeType || ""}</i>`)
         .addTo(mapRef.current);
       lugaresLayerRef.current.push(m);
     });
-  }, [lugares]);
+  }, [mapReady, lugares, points]);
 
   // Cleanup al desmontar
   useEffect(() => {
@@ -797,9 +802,13 @@ function MapPicker({ points, onChange, readonly = false, segmentGeometries = [],
     const L = window.L;
     lugaresLayerRef.current.forEach(l => l.remove?.());
     lugaresLayerRef.current = [];
+    const DEDUP_KM = 0.05;
     lugares.forEach((lugar) => {
       if (!lugar.points?.[0]) return;
       const { lat, lng } = lugar.points[0];
+      // No mostrar si coincide con un waypoint propio del mapa
+      const isOwnPoint = ptRef.current.some((p) => haversineKm(p.lat, p.lng, lat, lng) < DEDUP_KM);
+      if (isOwnPoint) return;
       const label = lugar.title || lugar.placeType;
       const icon = L.divIcon({
         html: `<div style="display:flex;flex-direction:column;align-items:center;pointer-events:none">
@@ -910,6 +919,8 @@ function PostCard({ post, currentUser, onLike, onComment, goProfile, goPostId, s
   const [cText, setCText] = useState("");
   const hasMap = post.points?.length > 0 && (isRouteType(post.type) || post.type === "lugar" || post.type === "evento");
   const saved = currentUser && savedRoutes?.some((r) => r.route_id === post.id);
+  // Memoizar segmentTypes para no disparar re-renders de MiniMap en cada render del feed
+  const segmentTypes = useMemo(() => post.segments?.map((s) => s.roadType), [post.segments]);
 
   const submitComment = () => {
     if (!cText.trim()) return;
@@ -991,7 +1002,7 @@ function PostCard({ post, currentUser, onLike, onComment, goProfile, goPostId, s
           </div>
         )}
       </div>
-      {hasMap && <MiniMap points={post.points} segmentGeometries={post.segmentGeometries} segmentTypes={post.segments?.map((s) => s.roadType)} lugares={lugares} placeType={post.placeType} />}
+      {hasMap && <MiniMap points={post.points} segmentGeometries={post.segmentGeometries} segmentTypes={segmentTypes} lugares={lugares} placeType={post.placeType} />}
     </div>
   );
 }
