@@ -797,7 +797,7 @@ function MapPicker({ points, onChange, readonly = false, segmentGeometries = [],
     lugares.forEach((lugar) => {
       if (!lugar.points?.[0]) return;
       const { lat, lng } = lugar.points[0];
-      const label = lugar.placeType || lugar.title;
+      const label = lugar.title || lugar.placeType;
       const icon = L.divIcon({
         html: `<div style="display:flex;flex-direction:column;align-items:center;pointer-events:none">
           <div style="background:#10b981;width:11px;height:11px;border-radius:50%;border:2px solid #fff;box-shadow:0 1px 5px #0009;flex-shrink:0"></div>
@@ -807,7 +807,7 @@ function MapPicker({ points, onChange, readonly = false, segmentGeometries = [],
       });
       const popupContent = () => {
         const div = L.DomUtil.create("div");
-        div.innerHTML = `<div style="font-size:13px;min-width:130px"><b style="color:#f1f5f9">${lugar.title}</b>${lugar.placeType ? `<br/><span style="color:#6ee7b7;font-size:11px">📍 ${lugar.placeType}</span>` : ""}${lugar.desc ? `<br/><span style="color:#94a3b8;font-size:11px">${lugar.desc}</span>` : ""}</div>`;
+        div.innerHTML = `<div style="font-size:13px;min-width:130px"><b style="color:#f1f5f9">${lugar.title}</b>${lugar.placeType && lugar.placeType !== "parada" ? `<br/><span style="color:#6ee7b7;font-size:11px">📍 ${lugar.placeType}</span>` : ""}${lugar.desc ? `<br/><span style="color:#94a3b8;font-size:11px">${lugar.desc}</span>` : ""}</div>`;
         if (!readonlyRef.current) {
           const btn = L.DomUtil.create("button", "", div);
           btn.textContent = "➕ Agregar como parada";
