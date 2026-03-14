@@ -1322,7 +1322,10 @@ export default function App() {
         tags: np.tags,
         points: np.type === "lugar" && np.points.length === 1
           ? [{ ...np.points[0], label: np.placeType || "Lugar" }]
-          : np.points,
+          : np.points.map((pt, i) => {
+              const nombre = np.pointsInfo[i]?.nombre?.trim();
+              return nombre ? { ...pt, label: nombre } : pt;
+            }),
         segments: np.segments,
         segment_geometries: np.segmentGeometries,
         segment_km: np.segmentKm,
