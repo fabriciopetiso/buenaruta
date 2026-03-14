@@ -196,9 +196,10 @@ const fetchProvince = async (point) => {
 const transformRoute = (r) => {
   const placeType = r.place_type || null;
   let points = r.points || [];
-  // Si es lugar con 1 punto, corregir el label con placeType
+  // Si es lugar con 1 punto: usar title como label (nombre real), placeType solo como fallback
   if (r.type === "lugar" && points.length === 1 && placeType) {
-    points = [{ ...points[0], label: placeType }];
+    const labelReal = placeType === "parada" ? (r.title || placeType) : placeType;
+    points = [{ ...points[0], label: labelReal }];
   }
   return {
     id: r.id,
@@ -664,7 +665,9 @@ function MiniMap({ points, segmentGeometries, segmentTypes, lugares = [], placeT
   // Efecto 2: re-renderizar puntos (corre cuando mapa está listo O cuando puntos cambian)
   useEffect(() => {
     if (!mapReady || !mapRef.current || !window.L) return;
-    const dp = placeType && points.length === 1 ? [{ ...points[0], label: placeType }] : points;
+    const dp = placeType && points.length === 1
+      ? [{ ...points[0], label: placeType === "parada" ? (points[0].label || placeType) : placeType }]
+      : points;
     renderMapLayers(window.L, mapRef.current, dp, segmentGeometries, segmentTypes, layersRef, true, null, null, null, null);
   }, [mapReady, points, segmentGeometries, segmentTypes, placeType]);
 
@@ -777,7 +780,7 @@ function MapPicker({ points, onChange, readonly = false, segmentGeometries = [],
     if (!mapReady || !mapRef.current || !window.L) return;
     
     const displayPoints = placeType && points.length === 1
-      ? [{ ...points[0], label: placeType }]
+      ? [{ ...points[0], label: placeType === "parada" ? (points[0].label || placeType) : placeType }]
       : points;
       
     renderMapLayers(window.L, mapRef.current, displayPoints, segmentGeometries, segmentTypes, layersRef, readonly, onChange, ptRef, null, null);
