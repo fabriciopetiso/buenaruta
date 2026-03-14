@@ -89,7 +89,7 @@ const EMPTY_FILTERS = { type: "all", tag: "", text: "", province: "", minLikes: 
 const EMPTY_NP = {
   type: "ruta", title: "", desc: "", tags: [], tagInput: "", points: [], segments: [],
   segmentGeometries: [], segmentKm: [], totalKm: 0, provinces: [], placeType: "", eventDate: "",
-  computing: false, routeError: "",
+  computing: false, routeError: "", pointsInfo: [],
 };
 
 const AUDIO_SRC = "/buena-ruta.mp3";
@@ -1269,7 +1269,11 @@ export default function App() {
   const updatePoints = (pts) => {
     const segCount = Math.max(0, pts.length - 1);
     const segs = Array.from({ length: segCount }, (_, i) => np.segments[i] || { roadType: "asfalto" });
-    setNp((prev) => resetRouteDerived({ ...prev, points: pts, segments: segs }));
+    setNp((prev) => {
+      // Preservar info existente al re-ordenar/agregar/quitar puntos
+      const newInfo = pts.map((_, i) => prev.pointsInfo[i] || { nombre: "", desc: "" });
+      return resetRouteDerived({ ...prev, points: pts, segments: segs, pointsInfo: newInfo });
+    });
   };
 
   const computeRoute = async () => {
@@ -1325,37 +1329,38 @@ export default function App() {
         event_date: np.type === "evento" ? np.eventDate : null,
       });
 
-      // Si es una ruta/viaje, crear lugares tipo "parada" para cada punto
-      // Se evita duplicar si ya existe una parada a menos de ~30m
+      // Para rutas/viajes: guardar solo paradas con nombre cargado
       if (isRouteType(np.type) && np.points.length > 0) {
         const existingParadas = routes.filter(
           (r) => r.type === "lugar" && r.placeType === "parada" && r.points?.length > 0
         );
-        const DEDUP_KM = 0.03; // 30 metros
+        const DEDUP_KM = 0.03;
 
-        const paradaPromises = np.points.map(async (pt, i) => {
-          const isDuplicate = existingParadas.some(
-            (p) => haversineKm(pt.lat, pt.lng, p.points[0].lat, p.points[0].lng) < DEDUP_KM
-          );
-          if (isDuplicate) return null;
-
-          const posLabel = i === 0 ? "Inicio" : i === np.points.length - 1 ? "Fin" : `Parada ${i}`;
-          return createRoute({
-            user_id: currentUser.id,
-            type: "lugar",
-            title: pt.label || posLabel,
-            description: `${posLabel} de la ruta "${np.title}"`,
-            tags: [],
-            points: [{ lat: pt.lat, lng: pt.lng, label: "parada" }],
-            segments: [],
-            segment_geometries: [],
-            segment_km: [],
-            total_km: 0,
-            provinces: np.provinces,
-            place_type: "parada",
-            event_date: null,
-          }).catch(() => null); // silenciar errores individuales
-        });
+        const paradaPromises = np.points
+          .map((pt, i) => ({ pt, info: np.pointsInfo[i] || { nombre: "", desc: "" }, i }))
+          .filter(({ info }) => info.nombre.trim()) // Solo paradas con nombre
+          .map(async ({ pt, info, i }) => {
+            const isDuplicate = existingParadas.some(
+              (p) => haversineKm(pt.lat, pt.lng, p.points[0].lat, p.points[0].lng) < DEDUP_KM
+            );
+            if (isDuplicate) return null;
+            const posLabel = i === 0 ? "Inicio" : i === np.points.length - 1 ? "Fin" : `Parada ${i}`;
+            return createRoute({
+              user_id: currentUser.id,
+              type: "lugar",
+              title: info.nombre.trim(),
+              description: info.desc.trim() || `${posLabel} de la ruta "${np.title}"`,
+              tags: [],
+              points: [{ lat: pt.lat, lng: pt.lng, label: "parada" }],
+              segments: [],
+              segment_geometries: [],
+              segment_km: [],
+              total_km: 0,
+              provinces: np.provinces,
+              place_type: "parada",
+              event_date: null,
+            }).catch(() => null);
+          });
 
         const createdParadas = (await Promise.all(paradaPromises)).filter(Boolean);
         if (createdParadas.length > 0) {
@@ -1689,13 +1694,59 @@ export default function App() {
                 {np.routeError && <p style={{ color: "#ef4444", fontSize: 13, marginTop: 6, textAlign: "center" }}>⚠️ {np.routeError}</p>}
                 {routeComputed && <RouteSummary totalKm={np.totalKm} provinces={np.provinces} segments={np.segments} segmentKm={np.segmentKm} />}
 
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 8 }}>
-                  {np.points.map((p, i) => (
-                    <span key={i} style={{ background: "#1e293b", color: "#94a3b8", borderRadius: 99, padding: "3px 10px", fontSize: 12 }}>
-                      {i === 0 ? "🟢" : i === np.points.length - 1 && np.points.length > 1 ? "🔴" : "🟡"} {p.label}
-                    </span>
-                  ))}
-                </div>
+                {/* Lista de paradas editables — solo para rutas/viajes con puntos */}
+                {draftIsRoute && np.points.length > 0 && (
+                  <div style={{ marginTop: 12 }}>
+                    <p style={{ color: "#94a3b8", fontSize: 12, marginBottom: 8 }}>
+                      📋 Cargá info de cada parada — se guardarán como puntos de interés en el mapa
+                    </p>
+                    {np.points.map((p, i) => {
+                      const isStart = i === 0;
+                      const isEnd = i === np.points.length - 1 && np.points.length > 1;
+                      const emoji = isStart ? "🟢" : isEnd ? "🔴" : "🟡";
+                      const defaultLabel = isStart ? "Inicio" : isEnd ? "Fin" : `Parada ${i}`;
+                      const info = np.pointsInfo[i] || { nombre: "", desc: "" };
+                      return (
+                        <div key={i} style={{ background: "#0f172a", border: "1px solid #334155", borderRadius: 10, padding: 10, marginBottom: 8 }}>
+                          <p style={{ color: "#64748b", fontSize: 11, margin: "0 0 6px", fontWeight: 600 }}>
+                            {emoji} {defaultLabel}
+                          </p>
+                          <input
+                            placeholder={`Nombre de esta parada (ej: Estación YPF Mina Clavero)`}
+                            style={{ ...inp, marginBottom: 6, padding: "7px 10px", fontSize: 13 }}
+                            value={info.nombre}
+                            onChange={(e) => setNp((prev) => {
+                              const newInfo = [...prev.pointsInfo];
+                              newInfo[i] = { ...newInfo[i], nombre: e.target.value };
+                              return { ...prev, pointsInfo: newInfo };
+                            })}
+                          />
+                          <textarea
+                            placeholder={`Descripción opcional (horario, tip, qué hay...)`}
+                            style={{ ...inp, padding: "7px 10px", fontSize: 13, minHeight: 52, resize: "vertical" }}
+                            value={info.desc}
+                            onChange={(e) => setNp((prev) => {
+                              const newInfo = [...prev.pointsInfo];
+                              newInfo[i] = { ...newInfo[i], desc: e.target.value };
+                              return { ...prev, pointsInfo: newInfo };
+                            })}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Badges para tipos no-ruta (lugar, evento) */}
+                {!draftIsRoute && (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 8 }}>
+                    {np.points.map((p, i) => (
+                      <span key={i} style={{ background: "#1e293b", color: "#94a3b8", borderRadius: 99, padding: "3px 10px", fontSize: 12 }}>
+                        {i === 0 ? "🟢" : i === np.points.length - 1 && np.points.length > 1 ? "🔴" : "🟡"} {p.label}
+                      </span>
+                    ))}
+                  </div>
+                )}
 
                 {np.points.length > 0 && (
                   <button onClick={() => setNp((prev) => resetRouteDerived({ ...prev, points: [], segments: [] }))} style={{ ...btn2, marginTop: 8, padding: "6px 12px", fontSize: 12 }}>
