@@ -713,6 +713,10 @@ function MapPicker({ points, onChange, readonly = false, segmentGeometries = [],
   const lugaresLayerRef = useRef([]);
   const ptRef = useRef(points);
   ptRef.current = points;
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+  const readonlyRef = useRef(readonly);
+  readonlyRef.current = readonly;
   
   // FIX: Flag para evitar re-inicialización
   const initializedRef = useRef(false);
@@ -792,12 +796,33 @@ function MapPicker({ points, onChange, readonly = false, segmentGeometries = [],
     lugaresLayerRef.current = [];
     lugares.forEach((lugar) => {
       if (!lugar.points?.[0]) return;
+      const { lat, lng } = lugar.points[0];
+      const label = lugar.placeType || lugar.title;
       const icon = L.divIcon({
-        html: `<div style="background:#10b981;width:10px;height:10px;border-radius:50%;border:2px solid #fff;box-shadow:0 1px 4px #0009"></div>`,
-        iconSize: [10, 10], iconAnchor: [5, 5], className: "",
+        html: `<div style="display:flex;flex-direction:column;align-items:center;pointer-events:none">
+          <div style="background:#10b981;width:11px;height:11px;border-radius:50%;border:2px solid #fff;box-shadow:0 1px 5px #0009;flex-shrink:0"></div>
+          <span style="background:#0f172aCC;color:#6ee7b7;font-size:9px;white-space:nowrap;padding:1px 4px;border-radius:3px;margin-top:2px;max-width:72px;overflow:hidden;text-overflow:ellipsis;line-height:1.3">${label}</span>
+        </div>`,
+        iconSize: [72, 28], iconAnchor: [36, 11], className: "",
       });
-      const m = L.marker([lugar.points[0].lat, lugar.points[0].lng], { icon })
-        .bindPopup(`<b>${lugar.title}</b><br/><span style="color:#64748b">${lugar.placeType || ""}</span>`)
+      const popupContent = () => {
+        const div = L.DomUtil.create("div");
+        div.innerHTML = `<div style="font-size:13px;min-width:120px"><b style="color:#f1f5f9">${lugar.title}</b>${lugar.placeType ? `<br/><span style="color:#6ee7b7;font-size:11px">📍 ${lugar.placeType}</span>` : ""}</div>`;
+        if (!readonlyRef.current) {
+          const btn = L.DomUtil.create("button", "", div);
+          btn.textContent = "➕ Agregar como parada";
+          btn.style.cssText = "margin-top:7px;background:#f59e0b;border:none;color:#0f172a;padding:5px 10px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:700;width:100%;display:block";
+          L.DomEvent.on(btn, "click", L.DomEvent.stopPropagation);
+          L.DomEvent.on(btn, "click", () => {
+            const newPts = normalizePoints([...ptRef.current, { lat, lng }]);
+            onChangeRef.current(newPts);
+            m.closePopup();
+          });
+        }
+        return div;
+      };
+      const m = L.marker([lat, lng], { icon, zIndexOffset: -100 })
+        .bindPopup(popupContent, { maxWidth: 200 })
         .addTo(mapRef.current);
       lugaresLayerRef.current.push(m);
     });
@@ -1585,6 +1610,25 @@ export default function App() {
                     ? "Tocá el mapa para marcar la ubicación exacta (1 solo punto)"
                     : "Tocá el mapa para agregar puntos · Clic derecho para eliminar"}
                 </p>
+                <button
+                  onClick={() => {
+                    if (!navigator.geolocation) return;
+                    navigator.geolocation.getCurrentPosition(
+                      (pos) => {
+                        const pt = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+                        if (np.type === "lugar") {
+                          updatePoints(normalizePoints([pt]));
+                        } else {
+                          updatePoints(normalizePoints([...np.points, pt]));
+                        }
+                      },
+                      () => alert("No se pudo obtener tu ubicación. Revisá los permisos del navegador.")
+                    );
+                  }}
+                  style={{ ...btn2, width: "100%", padding: "9px 12px", marginBottom: 8, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
+                >
+                  📍 Usar mi ubicación actual
+                </button>
                 <MapPicker points={np.points} onChange={(pts) => {
                   if (np.type === "lugar" && pts.length > 1) {
                     updatePoints([pts[pts.length - 1]]);
