@@ -1351,7 +1351,7 @@ export default function App() {
               title: info.nombre.trim(),
               description: info.desc.trim() || `${posLabel} de la ruta "${np.title}"`,
               tags: [],
-              points: [{ lat: pt.lat, lng: pt.lng, label: "parada" }],
+              points: [{ lat: pt.lat, lng: pt.lng, label: info.nombre.trim() }],
               segments: [],
               segment_geometries: [],
               segment_km: [],
