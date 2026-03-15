@@ -39,7 +39,7 @@ export const signOut = async () => {
 export const fetchRoutes = async (limit = 50) => {
   const { data, error } = await supabase
     .from('routes')
-    .select(`*, profiles:user_id (id, username, moto_modelo, moto_cilindrada, moto_anio), route_likes (user_id), route_comments (id, user_id, text, created_at, profiles:user_id (username))`)
+    .select(`*, profiles:user_id (id, username, avatar_url, moto_modelo, moto_cilindrada, moto_anio), route_likes (user_id), route_comments (id, user_id, text, created_at, profiles:user_id (username))`)
     .order('created_at', { ascending: false })
     .limit(limit)
   if (error) throw error
@@ -49,7 +49,7 @@ export const fetchRoutes = async (limit = 50) => {
 export const fetchRouteById = async (id) => {
   const { data, error } = await supabase
     .from('routes')
-    .select(`*, profiles:user_id (id, username, moto_modelo, moto_cilindrada, moto_anio), route_likes (user_id), route_comments (id, user_id, text, created_at, profiles:user_id (username))`)
+    .select(`*, profiles:user_id (id, username, avatar_url, moto_modelo, moto_cilindrada, moto_anio), route_likes (user_id), route_comments (id, user_id, text, created_at, profiles:user_id (username))`)
     .eq('id', id).single()
   if (error) throw error
   return data
@@ -149,6 +149,24 @@ export const updateProfile = async (userId, updates) => {
   const { data, error } = await supabase.from('profiles').update(updates).eq('id', userId).select().single()
   if (error) throw error
   return data
+}
+
+export const uploadAvatar = async (userId, file) => {
+  const ext = file.name.split('.').pop();
+  const path = `${userId}.${ext}`;
+  const { error } = await supabase.storage.from('avatars').upload(path, file, { upsert: true });
+  if (error) throw error;
+  const { data } = supabase.storage.from('avatars').getPublicUrl(path);
+  return data.publicUrl;
+}
+
+export const uploadRoutePhoto = async (userId, file) => {
+  const ext = file.name.split('.').pop();
+  const path = `${userId}/${Date.now()}.${ext}`;
+  const { error } = await supabase.storage.from('route-photos').upload(path, file, { upsert: false });
+  if (error) throw error;
+  const { data } = supabase.storage.from('route-photos').getPublicUrl(path);
+  return data.publicUrl;
 }
 
 export const fetchUserRoutes = async (userId) => {

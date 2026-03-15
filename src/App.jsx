@@ -18,6 +18,9 @@ import {
   toggleSaveRoute,
   updateSavedRouteStatus,
   fetchProfile,
+  updateProfile,
+  uploadAvatar,
+  uploadRoutePhoto,
   fetchUserRoutes,
   subscribeToRoutes,
   subscribeToLikes,
@@ -91,7 +94,7 @@ const EMPTY_FILTERS = { type: "all", tag: "", text: "", province: "", minLikes: 
 const EMPTY_NP = {
   type: "ruta", title: "", desc: "", tags: [], tagInput: "", points: [], segments: [],
   segmentGeometries: [], segmentKm: [], totalKm: 0, provinces: [], placeType: "", eventDate: "",
-  computing: false, routeError: "", pointsInfo: [],
+  computing: false, routeError: "", pointsInfo: [], photoFile: null, photoPreview: null,
 };
 
 const AUDIO_SRC = "/buena-ruta.mp3";
@@ -219,6 +222,7 @@ const transformRoute = (r) => {
     placeType,
     eventDate: r.event_date,
     status: r.status || "published",
+    photoUrl: r.photo_url || null,
     likes: (r.route_likes || []).map((l) => l.user_id),
     comments: (r.route_comments || []).map((c) => ({
       id: c.id,
@@ -231,6 +235,7 @@ const transformRoute = (r) => {
     author: r.profiles ? {
       id: r.profiles.id,
       username: r.profiles.username,
+      avatarUrl: r.profiles.avatar_url || null,
       moto: r.profiles.moto_modelo ? {
         modelo: r.profiles.moto_modelo,
         cilindrada: r.profiles.moto_cilindrada,
@@ -288,9 +293,16 @@ function LoadingSpinner() {
   return <div style={{ color: "#f59e0b", fontSize: 18 }}>⏳ Cargando...</div>;
 }
 
-function Avatar({ username, size = 32 }) {
+function Avatar({ username, size = 32, avatarUrl = null }) {
   const initials = username ? username.slice(0, 2).toUpperCase() : "?";
   const hue = username ? (username.charCodeAt(0) * 7) % 360 : 200;
+  if (avatarUrl) {
+    return (
+      <div style={{ width: size, height: size, borderRadius: "50%", overflow: "hidden", flexShrink: 0 }}>
+        <img src={avatarUrl} alt={username} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+      </div>
+    );
+  }
   return (
     <div style={{
       width: size, height: size, borderRadius: "50%", background: `hsl(${hue},55%,32%)`,
@@ -350,7 +362,7 @@ function SavedRoutesPanel({ savedRoutes, routes, currentUser, onOpenPost, onStar
         return (
           <div key={saved.id} style={{ background: "#0f172a", borderRadius: 10, padding: 10, marginBottom: 8, border: "1px solid #334155" }}>
             <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6 }}>
-              <Avatar username={post.author?.username} size={28} />
+              <Avatar username={post.author?.username} size={28} avatarUrl={post.author?.avatarUrl} />
               <div style={{ flex: 1 }}>
                 <div onClick={() => onOpenPost(post.id)} style={{ color: "#f1f5f9", fontWeight: 700, cursor: "pointer" }}>{post.title}</div>
                 <div style={{ color: "#64748b", fontSize: 12 }}>
@@ -935,7 +947,7 @@ function PostCard({ post, currentUser, onLike, onComment, goProfile, goPostId, s
     <div style={{ background: "#1e293b", borderRadius: 14, marginBottom: 12, overflow: "hidden" }}>
       <div style={{ padding: 16 }}>
         <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10 }}>
-          <div onClick={() => goProfile(post.userId)} style={{ cursor: "pointer" }}><Avatar username={post.author?.username} /></div>
+          <div onClick={() => goProfile(post.userId)} style={{ cursor: "pointer" }}><Avatar username={post.author?.username} avatarUrl={post.author?.avatarUrl} /></div>
           <div style={{ flex: 1 }}>
             <span style={{ color: "#f8fafc", fontWeight: 600, cursor: "pointer" }} onClick={() => goProfile(post.userId)}>@{post.author?.username}</span>
             {post.author?.moto && <span style={{ color: "#475569", fontSize: 11, marginLeft: 8 }}>🏍️ {post.author.moto.modelo}</span>}
@@ -1005,6 +1017,9 @@ function PostCard({ post, currentUser, onLike, onComment, goProfile, goPostId, s
           </div>
         )}
       </div>
+      {post.photoUrl && (
+        <img src={post.photoUrl} alt={post.title} style={{ width: "100%", height: 180, objectFit: "cover" }} />
+      )}
       {hasMap && <MiniMap points={post.points} segmentGeometries={post.segmentGeometries} segmentTypes={segmentTypes} lugares={lugares} placeType={post.placeType} />}
     </div>
   );
@@ -1061,7 +1076,23 @@ function ProfileView({ profileId, currentUser, routes, goBack, goPostId, handleL
     <div>
       <button onClick={goBack} style={{ ...btn2, padding: "6px 12px", marginBottom: 14 }}>← Volver</button>
       <div style={{ textAlign: "center", marginBottom: 20 }}>
-        <div style={{ display: "flex", justifyContent: "center" }}><Avatar username={profile.username} size={68} /></div>
+        <div style={{ display: "flex", justifyContent: "center", position: "relative" }}>
+          <Avatar username={profile.username} size={68} avatarUrl={profile.avatar_url} />
+          {isOwn && (
+            <label style={{ position: "absolute", bottom: 0, right: "calc(50% - 44px)", background: "#1e293b", border: "1px solid #334155", borderRadius: "50%", width: 22, height: 22, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: 12 }}>
+              📷
+              <input type="file" accept="image/*" style={{ display: "none" }} onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                try {
+                  const url = await uploadAvatar(profile.id, file);
+                  await updateProfile(profile.id, { avatar_url: url });
+                  setProfile(p => ({ ...p, avatar_url: url }));
+                } catch (err) { console.error(err); alert("Error subiendo la foto"); }
+              }} />
+            </label>
+          )}
+        </div>
         <h2 style={{ color: "#f1f5f9", margin: "10px 0 2px" }}>@{profile.username}</h2>
         {profile.moto_modelo && (
           <p style={{ color: "#f59e0b", fontSize: 14, margin: "0 0 10px" }}>🏍️ {profile.moto_modelo} · {profile.moto_cilindrada}cc · {profile.moto_anio}</p>
@@ -1344,13 +1375,15 @@ export default function App() {
       computing: false,
       routeError: "",
       pointsInfo: (post.points || []).map(() => ({ nombre: "", desc: "" })),
+      photoFile: null,
+      photoPreview: post.photoUrl || null,
     });
     setNpStep(1);
     setEditingDraftId(post.id);
     openView("new");
   };
 
-  const buildRoutePayload = (status = "published") => ({
+  const buildRoutePayload = (status = "published", photoUrl = null) => ({
     user_id: currentUser.id,
     type: np.type,
     title: np.title,
@@ -1370,12 +1403,16 @@ export default function App() {
     place_type: np.type === "lugar" ? np.placeType : null,
     event_date: np.type === "evento" ? np.eventDate : null,
     status,
+    photo_url: photoUrl,
   });
 
   const submitPost = async () => {
     if (!currentUser || !np.title.trim() || np.points.length === 0) return;
     try {
-      const payload = buildRoutePayload("published");
+      let photoUrl = null;
+      if (np.photoFile) photoUrl = await uploadRoutePhoto(currentUser.id, np.photoFile);
+      else if (np.photoPreview && np.photoPreview.startsWith("http")) photoUrl = np.photoPreview;
+      const payload = buildRoutePayload("published", photoUrl);
       let newRoute;
       if (editingDraftId) {
         newRoute = await updateRoute(editingDraftId, payload);
@@ -1442,7 +1479,10 @@ export default function App() {
   const saveDraft = async () => {
     if (!currentUser || !np.title.trim() || np.points.length === 0) return;
     try {
-      const payload = buildRoutePayload("draft");
+      let photoUrl = null;
+      if (np.photoFile) photoUrl = await uploadRoutePhoto(currentUser.id, np.photoFile);
+      else if (np.photoPreview && np.photoPreview.startsWith("http")) photoUrl = np.photoPreview;
+      const payload = buildRoutePayload("draft", photoUrl);
       if (editingDraftId) {
         const updated = await updateRoute(editingDraftId, payload);
         setRoutes(prev => prev.map(r => r.id === editingDraftId
@@ -1529,7 +1569,7 @@ export default function App() {
                   📋 {routes.filter(r => r.status === "draft" && r.userId === currentUser.id).length}
                 </button>
               )}
-              <div onClick={() => goProfile(currentUser.id)} style={{ cursor: "pointer" }}><Avatar username={currentUser.username} size={30} /></div>
+              <div onClick={() => goProfile(currentUser.id)} style={{ cursor: "pointer" }}><Avatar username={currentUser.username} size={30} avatarUrl={currentUser.avatar_url} /></div>
             </>
           ) : (
             <button onClick={() => openView("auth")} style={{ ...btn, padding: "6px 14px" }}>Entrar</button>
@@ -1706,6 +1746,28 @@ export default function App() {
 
                 <input placeholder="Título *" style={{ ...inp, marginBottom: 10 }} value={np.title} onChange={(e) => setNp((prev) => ({ ...prev, title: e.target.value }))} />
                 <textarea placeholder="Descripción" style={{ ...inp, marginBottom: 10, minHeight: 76, resize: "vertical" }} value={np.desc} onChange={(e) => setNp((prev) => ({ ...prev, desc: e.target.value }))} />
+
+                {/* Foto de portada */}
+                <div style={{ marginBottom: 10 }}>
+                  <label style={{ display: "block", color: "#64748b", fontSize: 12, marginBottom: 6 }}>📸 Foto de portada (opcional)</label>
+                  {np.photoPreview ? (
+                    <div style={{ position: "relative" }}>
+                      <img src={np.photoPreview} alt="preview" style={{ width: "100%", height: 160, objectFit: "cover", borderRadius: 8, border: "1px solid #334155" }} />
+                      <button onClick={() => setNp(prev => ({ ...prev, photoFile: null, photoPreview: null }))}
+                        style={{ position: "absolute", top: 6, right: 6, background: "#0f172acc", border: "none", color: "#ef4444", borderRadius: "50%", width: 24, height: 24, cursor: "pointer", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+                    </div>
+                  ) : (
+                    <label style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, background: "#1e293b", border: "1px dashed #334155", borderRadius: 8, padding: "20px 0", cursor: "pointer", color: "#64748b", fontSize: 13 }}>
+                      📷 Seleccionar foto
+                      <input type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        const preview = URL.createObjectURL(file);
+                        setNp(prev => ({ ...prev, photoFile: file, photoPreview: preview }));
+                      }} />
+                    </label>
+                  )}
+                </div>
 
                 {np.type === "lugar" && (
                   <select style={{ ...inp, marginBottom: 10 }} value={np.placeType} onChange={(e) => setNp((prev) => ({ ...prev, placeType: e.target.value }))}>
@@ -1886,7 +1948,7 @@ export default function App() {
               )}
 
               <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 12 }}>
-                <div onClick={() => goProfile(post.userId)} style={{ cursor: "pointer" }}><Avatar username={post.author?.username} size={42} /></div>
+                <div onClick={() => goProfile(post.userId)} style={{ cursor: "pointer" }}><Avatar username={post.author?.username} size={42} avatarUrl={post.author?.avatarUrl} /></div>
                 <div>
                   <span style={{ color: "#f8fafc", fontWeight: 700, cursor: "pointer" }} onClick={() => goProfile(post.userId)}>@{post.author?.username}</span>
                   {post.author?.moto && <p style={{ color: "#f59e0b", fontSize: 12, margin: "2px 0 0" }}>🏍️ {post.author.moto.modelo} · {post.author.moto.cilindrada}cc · {post.author.moto.anio}</p>}
@@ -1911,6 +1973,9 @@ export default function App() {
               )}
 
               <div style={{ marginTop: 12 }}>
+                {post.photoUrl && (
+                  <img src={post.photoUrl} alt={post.title} style={{ width: "100%", height: 220, objectFit: "cover", borderRadius: 10, marginBottom: 8, border: "1px solid #334155" }} />
+                )}
                 <MapPicker points={post.points} onChange={() => {}} readonly segmentGeometries={post.segmentGeometries} segmentTypes={post.segments?.map((s) => s.roadType)} lugares={allLugares} placeType={post.placeType} />
               </div>
 
