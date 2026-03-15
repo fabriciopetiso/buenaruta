@@ -648,7 +648,7 @@ const renderMapLayers = (L, map, points, segmentGeometries, segmentTypes, layers
 };
 
 // ── MiniMap ──────────────────────────────────────────────────────────────────
-function MiniMap({ points, segmentGeometries, segmentTypes, lugares = [], placeType }) {
+function MiniMap({ points, segmentGeometries, segmentTypes, lugares = [], placeType, square = false }) {
   const wrapperRef = useRef(null);
   const visible = useOnScreen(wrapperRef);
   const ref = useRef(null);
@@ -722,8 +722,8 @@ function MiniMap({ points, segmentGeometries, segmentTypes, lugares = [], placeT
   }, []);
 
   return (
-    <div ref={wrapperRef} style={{ minHeight: 160 }}>
-      <div ref={ref} style={{ width: "100%", height: 160, borderRadius: "0 0 10px 10px", overflow: "hidden", marginTop: 10, border: "1px solid #334155", background: "#0f172a" }} />
+    <div ref={wrapperRef} style={{ minHeight: square ? "100%" : 160, height: square ? "100%" : "auto" }}>
+      <div ref={ref} style={{ width: "100%", height: square ? "100%" : 160, minHeight: 160, borderRadius: square ? 0 : "0 0 10px 10px", overflow: "hidden", marginTop: square ? 0 : 10, border: square ? "none" : "1px solid #334155", background: "#0f172a" }} />
     </div>
   );
 }
@@ -1017,10 +1017,20 @@ function PostCard({ post, currentUser, onLike, onComment, goProfile, goPostId, s
           </div>
         )}
       </div>
-      {post.photoUrl && (
-        <img src={post.photoUrl} alt={post.title} style={{ width: "100%", height: 180, objectFit: "cover" }} />
+      {(post.photoUrl || hasMap) && (
+        <div style={{ display: "flex", gap: post.photoUrl && hasMap ? 2 : 0 }}>
+          {post.photoUrl && (
+            <div style={{ flex: 1, aspectRatio: "1/1", overflow: "hidden" }}>
+              <img src={post.photoUrl} alt={post.title} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+            </div>
+          )}
+          {hasMap && (
+            <div style={{ flex: 1, aspectRatio: "1/1", overflow: "hidden" }}>
+              <MiniMap points={post.points} segmentGeometries={post.segmentGeometries} segmentTypes={segmentTypes} lugares={lugares} placeType={post.placeType} square />
+            </div>
+          )}
+        </div>
       )}
-      {hasMap && <MiniMap points={post.points} segmentGeometries={post.segmentGeometries} segmentTypes={segmentTypes} lugares={lugares} placeType={post.placeType} />}
     </div>
   );
 }
