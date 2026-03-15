@@ -285,16 +285,17 @@ Archivos clave:
 - [x] Deduplicación por proximidad (~30m) — no crea duplicados
 - [x] Paradas ocultas del feed social (son overlay de mapa, no posts)
 
+**Gestión de publicaciones (Fase 2 completa)**
+- [x] Guardar borrador — publicar sin que aparezca en el feed
+- [x] Continuar editando un borrador guardado
+- [x] Editar una ruta publicada (✏️ Editar — solo para el creador)
+- [x] Eliminar una publicación propia (🗑 Eliminar — solo para el creador)
+
 ### 🔜 Próximos pasos — Fase 0 pendiente (usabilidad)
 
 - [ ] **Onboarding básico** — pantalla de bienvenida o tooltips para usuario nuevo
 - [ ] **Botón Seguir en el feed** — sin tener que entrar al perfil
 - [ ] **Buscador de usuarios** — buscar por @username o nombre
-
-### 📋 Fase 2 — Flujo de publicación completo
-
-- [ ] **Modo borrador** — guardar publicación sin publicar
-- [ ] **Edición de publicaciones** — editar ruta/lugar/evento después de publicar
 
 ### 📸 Fase 3 — Calidad en campo
 
@@ -317,6 +318,41 @@ Archivos clave:
 
 ---
 
+## 🚀 Cómo funciona BuenaRuta
+
+### Para el usuario nuevo
+
+**1. Registrarse**
+Creás una cuenta con email, elegís un @usuario y cargás los datos de tu moto. El perfil con la moto es parte de la identidad — es lo que aparece en tus publicaciones.
+
+**2. Explorar el feed**
+En el Home vas a ver rutas, viajes, lugares y eventos publicados por la comunidad. Cada card muestra el mapa de la ruta, los km, el tipo de camino y la provincia. Podés filtrar por tipo, provincia, km o likes.
+
+**3. Interactuar**
+Podés dar like, comentar y guardar rutas para hacerlas después. Si seguís a alguien, sus publicaciones aparecen primero.
+
+**4. Crear una publicación**
+Tocás **+ Publicar** y elegís qué querés publicar:
+- 🛣️ **Ruta** — trayecto con inicio, paradas y fin
+- 🧳 **Viaje** — igual que ruta, para travesías largas
+- 📍 **Lugar** — un punto de interés: mecánico, nafta, bar, mirador, camping
+- 🎉 **Evento** — concentración, salida grupal, fecha específica
+
+**5. Armar la ruta en el mapa**
+En el paso 2 marcás los puntos tocando el mapa, buscando por nombre o usando tu ubicación actual. Si es una ruta, calculás el trazado por calles (OSRM) y elegís el tipo de camino por tramo. Para cada parada podés cargar un nombre y descripción — esa info queda guardada como punto de interés para toda la comunidad.
+
+**6. Publicar o guardar borrador**
+- **Publicar** → aparece en el feed de todos
+- **Borrador** → se guarda solo para vos, podés seguir editándolo cuando quieras
+
+**7. Hacer una ruta**
+Desde cualquier ruta podés abrirla en Google Maps, Waze o la app de navegación del teléfono. También hay navegación GPS interna con tracking en tiempo real.
+
+### Los lugares de la comunidad
+Cada vez que alguien publica un lugar o carga paradas en una ruta, esos puntos aparecen como markers verdes en **todos los mapas de la app**. Al tocarlos ves el nombre, tipo y descripción. Si estás armando una ruta podés tocar cualquier marker verde y agregarlo como parada con un botón.
+
+---
+
 ## 🤝 Contribuir
 
 1. Fork del repo
@@ -330,7 +366,7 @@ Archivos clave:
 ## 📝 Notas Técnicas
 
 ### Sobre App.jsx
-El archivo principal (`src/App.jsx`) concentra la mayoría de la lógica (~1500 líneas). Esto es intencional para esta fase del proyecto, priorizando velocidad de iteración sobre modularidad.
+El archivo principal (`src/App.jsx`) concentra la mayoría de la lógica (~2000 líneas). Esto es intencional para esta fase del proyecto, priorizando velocidad de iteración sobre modularidad.
 
 **Incluye:**
 - Loader de Leaflet (carga dinámica)
@@ -341,6 +377,12 @@ El archivo principal (`src/App.jsx`) concentra la mayoría de la lógica (~1500 
 - Integración con Supabase
 
 **Refactor pendiente:** Separar en módulos cuando el proyecto escale.
+
+### Schema — columnas adicionales requeridas
+```sql
+-- Agregada en Marzo 2026
+ALTER TABLE routes ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'published';
+```
 
 ### APIs externas usadas
 - **OSRM** (router.project-osrm.org) - Cálculo de rutas
