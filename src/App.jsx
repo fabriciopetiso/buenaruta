@@ -7,6 +7,7 @@ import {
   fetchRoutes,
   fetchRouteById,
   createRoute,
+  deleteRoute,
   toggleLike,
   addComment,
   toggleFollow,
@@ -216,6 +217,7 @@ const transformRoute = (r) => {
     provinces: r.provinces || [],
     placeType,
     eventDate: r.event_date,
+    status: r.status || "published",
     likes: (r.route_likes || []).map((l) => l.user_id),
     comments: (r.route_comments || []).map((c) => ({
       id: c.id,
@@ -1322,40 +1324,42 @@ export default function App() {
     }
   };
 
+  const buildRoutePayload = (status = "published") => ({
+    user_id: currentUser.id,
+    type: np.type,
+    title: np.title,
+    description: np.desc,
+    tags: np.tags,
+    points: np.type === "lugar" && np.points.length === 1
+      ? [{ ...np.points[0], label: np.placeType || "Lugar" }]
+      : np.points.map((pt, i) => {
+          const nombre = np.pointsInfo[i]?.nombre?.trim();
+          return nombre ? { ...pt, label: nombre } : pt;
+        }),
+    segments: np.segments,
+    segment_geometries: np.segmentGeometries,
+    segment_km: np.segmentKm,
+    total_km: np.totalKm,
+    provinces: np.provinces,
+    place_type: np.type === "lugar" ? np.placeType : null,
+    event_date: np.type === "evento" ? np.eventDate : null,
+    status,
+  });
+
   const submitPost = async () => {
     if (!currentUser || !np.title.trim() || np.points.length === 0) return;
     try {
-      const newRoute = await createRoute({
-        user_id: currentUser.id,
-        type: np.type,
-        title: np.title,
-        description: np.desc,
-        tags: np.tags,
-        points: np.type === "lugar" && np.points.length === 1
-          ? [{ ...np.points[0], label: np.placeType || "Lugar" }]
-          : np.points.map((pt, i) => {
-              const nombre = np.pointsInfo[i]?.nombre?.trim();
-              return nombre ? { ...pt, label: nombre } : pt;
-            }),
-        segments: np.segments,
-        segment_geometries: np.segmentGeometries,
-        segment_km: np.segmentKm,
-        total_km: np.totalKm,
-        provinces: np.provinces,
-        place_type: np.type === "lugar" ? np.placeType : null,
-        event_date: np.type === "evento" ? np.eventDate : null,
-      });
+      const newRoute = await createRoute(buildRoutePayload("published"));
 
-      // Para rutas/viajes: guardar solo paradas con nombre cargado
+      // Para rutas/viajes publicadas: guardar paradas con nombre
       if (isRouteType(np.type) && np.points.length > 0) {
         const existingParadas = routes.filter(
           (r) => r.type === "lugar" && r.placeType === "parada" && r.points?.length > 0
         );
         const DEDUP_KM = 0.03;
-
         const paradaPromises = np.points
           .map((pt, i) => ({ pt, info: np.pointsInfo[i] || { nombre: "", desc: "" }, i }))
-          .filter(({ info }) => info.nombre.trim()) // Solo paradas con nombre
+          .filter(({ info }) => info.nombre.trim())
           .map(async ({ pt, info, i }) => {
             const isDuplicate = existingParadas.some(
               (p) => haversineKm(pt.lat, pt.lng, p.points[0].lat, p.points[0].lng) < DEDUP_KM
@@ -1376,9 +1380,9 @@ export default function App() {
               provinces: np.provinces,
               place_type: "parada",
               event_date: null,
+              status: "published",
             }).catch(() => null);
           });
-
         const createdParadas = (await Promise.all(paradaPromises)).filter(Boolean);
         if (createdParadas.length > 0) {
           const newLugares = createdParadas.map((r) =>
@@ -1395,6 +1399,26 @@ export default function App() {
     } catch (err) { console.error(err); }
   };
 
+  const saveDraft = async () => {
+    if (!currentUser || !np.title.trim() || np.points.length === 0) return;
+    try {
+      const newRoute = await createRoute(buildRoutePayload("draft"));
+      setRoutes(prev => [transformRoute({ ...newRoute, profiles: currentUser, route_likes: [], route_comments: [] }), ...prev]);
+      setNp(EMPTY_NP);
+      setNpStep(1);
+      setView("drafts"); setNavStack([]);
+    } catch (err) { console.error(err); }
+  };
+
+  const handleDeleteRoute = async (routeId) => {
+    if (!window.confirm("¿Eliminar esta publicación? No se puede deshacer.")) return;
+    try {
+      await deleteRoute(routeId);
+      setRoutes(prev => prev.filter(r => r.id !== routeId));
+      goBack();
+    } catch (err) { console.error(err); }
+  };
+
   // ─── Filtering ─────────────────────────────────────────────────────────────
   const filteredRoutes = useMemo(() => {
     const minLikes = filters.minLikes === "" ? null : Number(filters.minLikes);
@@ -1403,7 +1427,8 @@ export default function App() {
 
     return routes
       .filter((p) => {
-        if (p.placeType === "parada") return false; // paradas son overlay de mapa, no posts del feed
+        if (p.placeType === "parada") return false;
+        if (p.status === "draft") return false; // borradores solo visibles para su autor
         if (filters.type !== "all" && p.type !== filters.type) return false;
         if (filters.tag && !p.tags?.some((t) => t.toLowerCase().includes(filters.tag.toLowerCase()))) return false;
         if (debouncedText && !p.title.toLowerCase().includes(debouncedText.toLowerCase()) && !p.desc?.toLowerCase().includes(debouncedText.toLowerCase())) return false;
@@ -1449,6 +1474,11 @@ export default function App() {
           {currentUser ? (
             <>
               <button onClick={() => { openView("new", () => { setNp(EMPTY_NP); setNpStep(1); }); }} style={{ ...btn, padding: "6px 12px", fontSize: 13 }}>+ Publicar</button>
+              {routes.some(r => r.status === "draft" && r.userId === currentUser.id) && (
+                <button onClick={() => openView("drafts")} style={{ ...btn2, padding: "6px 10px", fontSize: 13 }} title="Mis borradores">
+                  📋 {routes.filter(r => r.status === "draft" && r.userId === currentUser.id).length}
+                </button>
+              )}
               <div onClick={() => goProfile(currentUser.id)} style={{ cursor: "pointer" }}><Avatar username={currentUser.username} size={30} /></div>
             </>
           ) : (
@@ -1774,6 +1804,7 @@ export default function App() {
 
                 <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
                   <button onClick={() => setNpStep(1)} style={{ ...btn2, flex: 1, padding: 12 }}>← Volver</button>
+                  <button onClick={saveDraft} disabled={!np.title.trim() || np.points.length === 0} style={{ ...btn2, flex: 1, padding: 12, opacity: !np.title.trim() || np.points.length === 0 ? 0.5 : 1 }}>📋 Borrador</button>
                   <button onClick={submitPost} disabled={!canPublish} style={{ ...btn, flex: 2, padding: 12, opacity: !canPublish ? 0.5 : 1 }}>Publicar 🏍️</button>
                 </div>
 
@@ -1795,6 +1826,9 @@ export default function App() {
           return (
             <>
               <button onClick={goBack} style={{ ...btn2, padding: "6px 12px", marginBottom: 14 }}>← Volver</button>
+              {currentUser?.id === post.userId && (
+                <button onClick={() => handleDeleteRoute(post.id)} style={{ ...btn2, padding: "6px 12px", marginBottom: 14, marginLeft: 8, color: "#ef4444", borderColor: "#ef444433" }}>🗑 Eliminar</button>
+              )}
 
               <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 12 }}>
                 <div onClick={() => goProfile(post.userId)} style={{ cursor: "pointer" }}><Avatar username={post.author?.username} size={42} /></div>
@@ -1877,6 +1911,36 @@ export default function App() {
           <ProfileView profileId={activeProfileId} currentUser={currentUser} routes={routes}
             goBack={goBack} goPostId={goPostId} handleLike={handleLike} handleComment={handleComment}
             savedRoutes={savedRoutes} handleToggleSaved={handleToggleSaved} setNavigatorPostId={setNavigatorPostId} handleLogout={handleLogout} lugares={allLugares} />
+        )}
+
+        {/* Drafts View */}
+        {view === "drafts" && currentUser && (
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+              <button onClick={goBack} style={{ ...btn2, padding: "6px 10px" }}>←</button>
+              <h2 style={{ margin: 0, color: "#f59e0b" }}>📋 Mis borradores</h2>
+            </div>
+            {(() => {
+              const drafts = routes.filter(r => r.status === "draft" && r.userId === currentUser.id);
+              if (drafts.length === 0) return <p style={{ color: "#64748b", textAlign: "center", marginTop: 30 }}>No tenés borradores guardados.</p>;
+              return drafts.map((post) => (
+                <div key={post.id} style={{ background: "#1e293b", borderRadius: 14, marginBottom: 12, padding: 16, border: "1px solid #f59e0b33" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+                    <div>
+                      <span style={{ background: "#f59e0b22", color: "#f59e0b", borderRadius: 99, padding: "2px 8px", fontSize: 11, fontWeight: 700 }}>BORRADOR</span>
+                      <h3 style={{ color: "#f1f5f9", margin: "6px 0 2px", fontSize: 15 }}>{post.title}</h3>
+                      {post.desc && <p style={{ color: "#94a3b8", fontSize: 13, margin: 0 }}>{post.desc}</p>}
+                      {post.totalKm > 0 && <span style={{ color: "#f59e0b", fontSize: 12 }}>🛣️ {post.totalKm} km</span>}
+                    </div>
+                    <button onClick={() => handleDeleteRoute(post.id)} style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", fontSize: 18, padding: 4 }}>🗑</button>
+                  </div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button onClick={() => goPostId(post.id)} style={{ ...btn2, flex: 1, padding: "8px 12px", fontSize: 13 }}>Ver detalle →</button>
+                  </div>
+                </div>
+              ));
+            })()}
+          </div>
         )}
       </div>
 
