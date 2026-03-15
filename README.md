@@ -256,30 +256,64 @@ Archivos clave:
 ## 🗺️ Roadmap
 
 ### ✅ Completado
-- [x] Feed social compartido con Supabase
-- [x] Auth (registro/login)
-- [x] Crear rutas con mapa interactivo
-- [x] Tipo de camino por tramo (asfalto/ripio/tierra/mal estado/mixto)
-- [x] Likes, comentarios, follows
-- [x] Guardar rutas y marcar completadas
-- [x] Navegación GPS interna
-- [x] Integración Google Maps / Waze
-- [x] PWA instalable
+
+**Core social**
+- [x] Feed social con Supabase (rutas, viajes, lugares, eventos)
+- [x] Auth completo (registro, login, sesiones persistentes, perfiles)
+- [x] Likes, comentarios, follows entre usuarios
+- [x] Guardar rutas y marcar como completadas
+- [x] Filtros del feed (tipo, provincia, km, likes, texto)
+- [x] PWA instalable (Android / iOS sin App Store)
 - [x] Audio intro 🎵
 
-### 🔜 Próximos pasos
-- [ ] Guardar track GPS recorrido en Supabase
-- [ ] Sistema de moderación / admin
-- [ ] Fotos en rutas
-- [ ] Notificaciones
-- [ ] Filtros avanzados (HomeQuickFilters)
-- [ ] Exportar ruta como GPX
+**Mapas y rutas**
+- [x] Editor de rutas con mapa interactivo (Leaflet + OSM)
+- [x] Tipo de camino por tramo (asfalto / ripio / tierra / mal estado / mixto)
+- [x] Cálculo automático de ruta por calles (OSRM)
+- [x] Detección automática de provincias (Nominatim)
+- [x] MiniMap en el feed + mapa completo en detalle de ruta
+- [x] Abrir ruta en Google Maps / Waze / app del teléfono
+- [x] Navegación GPS interna con tracking en tiempo real
+- [x] Botón "Usar mi ubicación actual" al crear publicación
+
+**Red de lugares (Fase 1 completa)**
+- [x] Lugares de la comunidad visibles como overlay en todos los mapas
+- [x] Etiqueta visible en cada punto del mapa (nombre + tipo)
+- [x] Click en lugar → popup con nombre, descripción y botón "Agregar como parada"
+- [x] Paradas editables al crear una ruta (nombre + descripción por punto)
+- [x] Paradas se guardan como lugares persistentes (solo si tienen nombre)
+- [x] Deduplicación por proximidad (~30m) — no crea duplicados
+- [x] Paradas ocultas del feed social (son overlay de mapa, no posts)
+
+### 🔜 Próximos pasos — Fase 0 pendiente (usabilidad)
+
+- [ ] **Onboarding básico** — pantalla de bienvenida o tooltips para usuario nuevo
+- [ ] **Botón Seguir en el feed** — sin tener que entrar al perfil
+- [ ] **Buscador de usuarios** — buscar por @username o nombre
+
+### 📋 Fase 2 — Flujo de publicación completo
+
+- [ ] **Modo borrador** — guardar publicación sin publicar
+- [ ] **Edición de publicaciones** — editar ruta/lugar/evento después de publicar
+
+### 📸 Fase 3 — Calidad en campo
+
+- [ ] **Fotos en publicaciones** — hasta 5 imágenes por ruta o lugar (Supabase Storage)
+- [ ] **Exportar ruta como GPX**
+- [ ] **Guardar track GPS recorrido** en Supabase
+
+### 🔐 Fase 4 — Administración
+
+- [ ] **Roles (superadmin)** — Custom Claims en Supabase JWT
+- [ ] **Panel de moderación** — editar/eliminar contenido, log de acciones
+- [ ] **Notificaciones** — likes, comentarios, nuevas rutas de seguidos (Push PWA)
 
 ### 💡 Ideas futuras
+
 - [ ] Modo offline con rutas descargadas
+- [ ] Gamification (badges, km totales, rutas completadas)
 - [ ] Integración con apps de telemetría
-- [ ] Eventos y quedadas grupales
-- [ ] Gamification (badges, km totales)
+- [ ] Datos anonimizados para turismo regional / aseguradoras (requiere volumen)
 
 ---
 
