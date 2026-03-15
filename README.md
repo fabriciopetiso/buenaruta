@@ -291,6 +291,12 @@ Archivos clave:
 - [x] Editar una ruta publicada (✏️ Editar — solo para el creador)
 - [x] Eliminar una publicación propia (🗑 Eliminar — solo para el creador)
 
+**Fotos (Fase 3 parcial)**
+- [x] Foto de perfil — sube a Supabase Storage (bucket `avatars`)
+- [x] Foto de portada por ruta/lugar/evento — sube a Supabase Storage (bucket `route-photos`)
+- [x] Vista en feed: foto + mapa como dos cuadrados iguales lado a lado
+- [x] Vista en detalle: foto de portada sobre el mapa completo
+
 ### 🔜 Próximos pasos — Fase 0 pendiente (usabilidad)
 
 - [ ] **Onboarding básico** — pantalla de bienvenida o tooltips para usuario nuevo
@@ -299,7 +305,6 @@ Archivos clave:
 
 ### 📸 Fase 3 — Calidad en campo
 
-- [ ] **Fotos en publicaciones** — hasta 5 imágenes por ruta o lugar (Supabase Storage)
 - [ ] **Exportar ruta como GPX**
 - [ ] **Guardar track GPS recorrido** en Supabase
 
