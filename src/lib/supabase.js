@@ -61,6 +61,12 @@ export const createRoute = async (route) => {
   return data
 }
 
+export const updateRoute = async (id, updates) => {
+  const { data, error } = await supabase.from('routes').update(updates).eq('id', id).select().single()
+  if (error) throw error
+  return data
+}
+
 export const deleteRoute = async (id) => {
   const { error } = await supabase.from('routes').delete().eq('id', id)
   if (error) throw error

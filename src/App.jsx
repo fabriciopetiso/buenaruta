@@ -7,6 +7,7 @@ import {
   fetchRoutes,
   fetchRouteById,
   createRoute,
+  updateRoute,
   deleteRoute,
   toggleLike,
   addComment,
@@ -1107,6 +1108,7 @@ export default function App() {
 
   const [np, setNp] = useState(EMPTY_NP);
   const [npStep, setNpStep] = useState(1);
+  const [editingDraftId, setEditingDraftId] = useState(null);
   const routeReqIdRef = useRef(0);
 
   const [activePostId, setActivePostId] = useState(null);
@@ -1324,6 +1326,30 @@ export default function App() {
     }
   };
 
+  const loadDraftForEdit = (post) => {
+    setNp({
+      type: post.type,
+      title: post.title,
+      desc: post.desc || "",
+      tags: post.tags || [],
+      tagInput: "",
+      points: post.points || [],
+      segments: post.segments || [],
+      segmentGeometries: post.segmentGeometries || [],
+      segmentKm: post.segmentKm || [],
+      totalKm: post.totalKm || 0,
+      provinces: post.provinces || [],
+      placeType: post.placeType || "",
+      eventDate: post.eventDate || "",
+      computing: false,
+      routeError: "",
+      pointsInfo: (post.points || []).map(() => ({ nombre: "", desc: "" })),
+    });
+    setNpStep(1);
+    setEditingDraftId(post.id);
+    openView("new");
+  };
+
   const buildRoutePayload = (status = "published") => ({
     user_id: currentUser.id,
     type: np.type,
@@ -1349,10 +1375,21 @@ export default function App() {
   const submitPost = async () => {
     if (!currentUser || !np.title.trim() || np.points.length === 0) return;
     try {
-      const newRoute = await createRoute(buildRoutePayload("published"));
+      const payload = buildRoutePayload("published");
+      let newRoute;
+      if (editingDraftId) {
+        newRoute = await updateRoute(editingDraftId, payload);
+        setRoutes(prev => prev.map(r => r.id === editingDraftId
+          ? transformRoute({ ...newRoute, profiles: currentUser, route_likes: [], route_comments: [] })
+          : r
+        ));
+        setEditingDraftId(null);
+      } else {
+        newRoute = await createRoute(payload);
+      }
 
       // Para rutas/viajes publicadas: guardar paradas con nombre
-      if (isRouteType(np.type) && np.points.length > 0) {
+      if (!editingDraftId && isRouteType(np.type) && np.points.length > 0) {
         const existingParadas = routes.filter(
           (r) => r.type === "lugar" && r.placeType === "parada" && r.points?.length > 0
         );
@@ -1392,9 +1429,12 @@ export default function App() {
         }
       }
 
-      setRoutes(prev => [transformRoute({ ...newRoute, profiles: currentUser, route_likes: [], route_comments: [] }), ...prev]);
+      if (!editingDraftId) {
+        setRoutes(prev => [transformRoute({ ...newRoute, profiles: currentUser, route_likes: [], route_comments: [] }), ...prev]);
+      }
       setNp(EMPTY_NP);
       setNpStep(1);
+      setEditingDraftId(null);
       setView("feed"); setNavStack([]);
     } catch (err) { console.error(err); }
   };
@@ -1402,10 +1442,20 @@ export default function App() {
   const saveDraft = async () => {
     if (!currentUser || !np.title.trim() || np.points.length === 0) return;
     try {
-      const newRoute = await createRoute(buildRoutePayload("draft"));
-      setRoutes(prev => [transformRoute({ ...newRoute, profiles: currentUser, route_likes: [], route_comments: [] }), ...prev]);
+      const payload = buildRoutePayload("draft");
+      if (editingDraftId) {
+        const updated = await updateRoute(editingDraftId, payload);
+        setRoutes(prev => prev.map(r => r.id === editingDraftId
+          ? transformRoute({ ...updated, profiles: currentUser, route_likes: [], route_comments: [] })
+          : r
+        ));
+      } else {
+        const newRoute = await createRoute(payload);
+        setRoutes(prev => [transformRoute({ ...newRoute, profiles: currentUser, route_likes: [], route_comments: [] }), ...prev]);
+      }
       setNp(EMPTY_NP);
       setNpStep(1);
+      setEditingDraftId(null);
       setView("drafts"); setNavStack([]);
     } catch (err) { console.error(err); }
   };
@@ -1473,7 +1523,7 @@ export default function App() {
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           {currentUser ? (
             <>
-              <button onClick={() => { openView("new", () => { setNp(EMPTY_NP); setNpStep(1); }); }} style={{ ...btn, padding: "6px 12px", fontSize: 13 }}>+ Publicar</button>
+              <button onClick={() => { openView("new", () => { setNp(EMPTY_NP); setNpStep(1); setEditingDraftId(null); }); }} style={{ ...btn, padding: "6px 12px", fontSize: 13 }}>+ Publicar</button>
               {routes.some(r => r.status === "draft" && r.userId === currentUser.id) && (
                 <button onClick={() => openView("drafts")} style={{ ...btn2, padding: "6px 10px", fontSize: 13 }} title="Mis borradores">
                   📋 {routes.filter(r => r.status === "draft" && r.userId === currentUser.id).length}
@@ -1636,7 +1686,9 @@ export default function App() {
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
               <button onClick={goBack} style={{ ...btn2, padding: "6px 10px" }}>←</button>
               <h2 style={{ margin: 0, color: "#f59e0b" }}>Nueva publicación</h2>
-              <span style={{ marginLeft: "auto", color: "#64748b", fontSize: 13 }}>Paso {npStep}/2</span>
+              <span style={{ marginLeft: "auto", color: editingDraftId ? "#f59e0b" : "#64748b", fontSize: 13 }}>
+                {editingDraftId ? "✏️ Editando borrador" : `Paso ${npStep}/2`}
+              </span>
             </div>
 
             {npStep === 1 && (
@@ -1935,6 +1987,7 @@ export default function App() {
                     <button onClick={() => handleDeleteRoute(post.id)} style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", fontSize: 18, padding: 4 }}>🗑</button>
                   </div>
                   <div style={{ display: "flex", gap: 8 }}>
+                    <button onClick={() => loadDraftForEdit(post)} style={{ ...btn, flex: 1, padding: "8px 12px", fontSize: 13 }}>✏️ Continuar editando</button>
                     <button onClick={() => goPostId(post.id)} style={{ ...btn2, flex: 1, padding: "8px 12px", fontSize: 13 }}>Ver detalle →</button>
                   </div>
                 </div>
