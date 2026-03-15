@@ -1879,7 +1879,10 @@ export default function App() {
             <>
               <button onClick={goBack} style={{ ...btn2, padding: "6px 12px", marginBottom: 14 }}>← Volver</button>
               {currentUser?.id === post.userId && (
-                <button onClick={() => handleDeleteRoute(post.id)} style={{ ...btn2, padding: "6px 12px", marginBottom: 14, marginLeft: 8, color: "#ef4444", borderColor: "#ef444433" }}>🗑 Eliminar</button>
+                <>
+                  <button onClick={() => handleDeleteRoute(post.id)} style={{ ...btn2, padding: "6px 12px", marginBottom: 14, marginLeft: 8, color: "#ef4444", borderColor: "#ef444433" }}>🗑 Eliminar</button>
+                  <button onClick={() => loadDraftForEdit(post)} style={{ ...btn2, padding: "6px 12px", marginBottom: 14, marginLeft: 8 }}>✏️ Editar</button>
+                </>
               )}
 
               <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 12 }}>
