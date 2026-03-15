@@ -704,7 +704,7 @@ function MiniMap({ points, segmentGeometries, segmentTypes, lugares = [], placeT
         iconSize: [8, 8], iconAnchor: [4, 4], className: "",
       });
       const m = L.marker([lat, lng], { icon })
-        .bindPopup(`<b>${lugar.title}</b><br/><i style="color:#94a3b8">${lugar.placeType || ""}</i>`)
+        .bindPopup(`<div style="font-size:13px;min-width:160px;max-width:260px"><b style="color:#333">${lugar.title}</b>${lugar.placeType && lugar.placeType !== "parada" ? `<br/><span style="color:#10b981;font-size:11px">📍 ${lugar.placeType}</span>` : ""}${lugar.desc ? `<br/><span style="color:#666;font-size:12px;line-height:1.5;display:block;margin-top:4px">${lugar.desc}</span>` : ""}</div>`, { maxWidth: 280 })
         .addTo(mapRef.current);
       lugaresLayerRef.current.push(m);
     });
@@ -834,7 +834,7 @@ function MapPicker({ points, onChange, readonly = false, segmentGeometries = [],
       });
       const popupContent = () => {
         const div = L.DomUtil.create("div");
-        div.innerHTML = `<div style="font-size:13px;min-width:130px"><b style="color:#f1f5f9">${lugar.title}</b>${lugar.placeType && lugar.placeType !== "parada" ? `<br/><span style="color:#6ee7b7;font-size:11px">📍 ${lugar.placeType}</span>` : ""}${lugar.desc ? `<br/><span style="color:#94a3b8;font-size:11px">${lugar.desc}</span>` : ""}</div>`;
+        div.innerHTML = `<div style="font-size:13px;min-width:160px;max-width:260px"><b style="color:#f1f5f9;font-size:14px">${lugar.title}</b>${lugar.placeType && lugar.placeType !== "parada" ? `<br/><span style="color:#6ee7b7;font-size:11px">📍 ${lugar.placeType}</span>` : ""}${lugar.desc ? `<br/><span style="color:#94a3b8;font-size:12px;line-height:1.5;display:block;margin-top:4px">${lugar.desc}</span>` : ""}</div>`;
         if (!readonlyRef.current) {
           const btn = L.DomUtil.create("button", "", div);
           btn.textContent = "➕ Agregar como parada";
@@ -849,7 +849,7 @@ function MapPicker({ points, onChange, readonly = false, segmentGeometries = [],
         return div;
       };
       const m = L.marker([lat, lng], { icon, zIndexOffset: -100 })
-        .bindPopup(popupContent, { maxWidth: 200 })
+        .bindPopup(popupContent, { maxWidth: 280 })
         .addTo(mapRef.current);
       lugaresLayerRef.current.push(m);
     });
