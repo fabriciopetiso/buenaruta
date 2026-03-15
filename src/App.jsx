@@ -595,9 +595,11 @@ function ActiveNavigation({ post, onClose, onComplete }) {
 }
 
 // ── Map shared renderer ──────────────────────────────────────────────────────
-const renderMapLayers = (L, map, points, segmentGeometries, segmentTypes, layersRef, readonly, onChange, ptRef, onDeletePoint, onClickMarker) => {
+const renderMapLayers = (L, map, points, segmentGeometries, segmentTypes, layersRef, readonly, onChange, ptRef, onDeletePoint, onClickMarker, lugares = []) => {
   layersRef.current.forEach((l) => l.remove());
   layersRef.current = [];
+
+  const DEDUP_KM = 0.05;
 
   points.forEach((p, i) => {
     const color = i === 0 ? "#22c55e" : i === points.length - 1 && points.length > 1 ? "#ef4444" : "#f59e0b";
@@ -610,6 +612,19 @@ const renderMapLayers = (L, map, points, segmentGeometries, segmentTypes, layers
     const m = L.marker([p.lat, p.lng], { icon, draggable: !readonly, keyboard: true })
       .bindTooltip(p.label, { permanent: true, direction: "top", offset: [0, -10] })
       .addTo(map);
+
+    // En modo readonly: buscar lugar cercano y mostrar popup con info completa
+    if (readonly && lugares.length > 0) {
+      const match = lugares.find(l => l.points?.[0] && haversineKm(p.lat, p.lng, l.points[0].lat, l.points[0].lng) < DEDUP_KM);
+      if (match) {
+        const popupHtml = `<div style="font-size:13px;min-width:160px;max-width:280px">
+          <b style="color:#333;font-size:14px">${match.title}</b>
+          ${match.placeType && match.placeType !== "parada" ? `<br/><span style="color:#10b981;font-size:11px">📍 ${match.placeType}</span>` : ""}
+          ${match.desc ? `<br/><span style="color:#555;font-size:12px;line-height:1.5;display:block;margin-top:4px">${match.desc}</span>` : ""}
+        </div>`;
+        m.bindPopup(popupHtml, { maxWidth: 300 });
+      }
+    }
 
     if (onClickMarker) {
       m.on("click", () => onClickMarker(p, i));
@@ -683,7 +698,7 @@ function MiniMap({ points, segmentGeometries, segmentTypes, lugares = [], placeT
     const dp = placeType && points.length === 1
       ? [{ ...points[0], label: placeType === "parada" ? (points[0].label || placeType) : placeType }]
       : points;
-    renderMapLayers(window.L, mapRef.current, dp, segmentGeometries, segmentTypes, layersRef, true, null, null, null, null);
+    renderMapLayers(window.L, mapRef.current, dp, segmentGeometries, segmentTypes, layersRef, true, null, null, null, null, lugares);
   }, [mapReady, points, segmentGeometries, segmentTypes, placeType]);
 
   // Efecto 3: capa de lugares, separada para no tocar el mapa base
@@ -803,7 +818,7 @@ function MapPicker({ points, onChange, readonly = false, segmentGeometries = [],
       ? [{ ...points[0], label: placeType === "parada" ? (points[0].label || placeType) : placeType }]
       : points;
       
-    renderMapLayers(window.L, mapRef.current, displayPoints, segmentGeometries, segmentTypes, layersRef, readonly, onChange, ptRef, null, null);
+    renderMapLayers(window.L, mapRef.current, displayPoints, segmentGeometries, segmentTypes, layersRef, readonly, onChange, ptRef, null, null, lugares);
     
     // FIX: invalidateSize después de renderizar capas
     setTimeout(() => {
